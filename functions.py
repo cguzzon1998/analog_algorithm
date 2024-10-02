@@ -1,3 +1,140 @@
+# %% APIs to download ERA5 reanalysis data
+import cdsapi
+from tqdm import tqdm
+import os
+
+def download_era5_gpt(level, coords):
+
+    """ API of ERA5 to download reanalysis data of geopotential height fields for a specified level
+        INPUT: 
+            - level: pressure level of the geopotential height field (eg:'500')
+            - coords: array of the coordinates forming the spatial box to download data, in the format [lat_n, lon_w, lat_s, lon_e]
+                      (eg: for Western Meditarranean region (A. Philipp, 2010) -> coords = [48, -17, 31, 9] )
+        OUTPUT: ds of the requested gpt data saved in the folder gpt_fold"""
+
+    gpt_fold = 'test/ERA5_gpt_ds'
+    os.makedirs(gpt_fold, exist_ok=True)
+
+    dataset = "reanalysis-era5-pressure-levels"
+    request = {
+        "product_type": ["reanalysis"],
+        "variable": ["geopotential"],
+        "year": [
+            "1940", "1941", "1942",
+            "1943", "1944", "1945",
+            "1946", "1947", "1948",
+            "1949", "1950", "1951",
+            "1952", "1953", "1954",
+            "1955", "1956", "1957",
+            "1958", "1959", "1960",
+            "1961", "1962", "1963",
+            "1964", "1965", "1966",
+            "1967", "1968", "1969",
+            "1970", "1971", "1972",
+            "1973", "1974", "1975",
+            "1976", "1977", "1978",
+            "1979", "1980", "1981",
+            "1982", "1983", "1984",
+            "1985", "1986", "1987",
+            "1988", "1989", "1990",
+            "1991", "1992", "1993",
+            "1994", "1995", "1996",
+            "1997", "1998", "1999",
+            "2000", "2001", "2002",
+            "2003", "2004", "2005",
+            "2006", "2007", "2008",
+            "2009", "2010", "2011",
+            "2012", "2013", "2014",
+            "2015", "2016", "2017",
+            "2018", "2019", "2020",
+            "2021", "2022", "2023"
+        ],
+        "month": [
+            "01", "02", "03",
+            "04", "05", "06",
+            "07", "08", "09",
+            "10", "11", "12"
+        ],
+        "day": [
+            "01", "02", "03",
+            "04", "05", "06",
+            "07", "08", "09",
+            "10", "11", "12",
+            "13", "14", "15",
+            "16", "17", "18",
+            "19", "20", "21",
+            "22", "23", "24",
+            "25", "26", "27",
+            "28", "29", "30",
+            "31"
+        ],
+        "time": ["00:00"],
+        "pressure_level": [level],
+        "data_format": "grib",
+        "download_format": "unarchived",
+        "area": coords
+    }
+
+    client = cdsapi.Client()
+    client.retrieve(dataset, request).download(f'{gpt_fold}/geopotential_data_{level}.grib')
+   
+
+def download_era5_precip(coords):
+
+    """ API of ERA5 to download reanalysis data of hourly cumulated precipitation data for a specified region
+        INPUT: 
+            - coords: array of the coordinates forming the spatial box to download data, in the format [lat_n, lon_w, lat_s, lon_e]
+                      (eg: for Catalonia region -> coords = [43, 0, 40, 3.5] )
+        OUTPUT: ds of the requested precipitation data saved in the folder precip_fold"""
+    
+    precip_fold = 'test/ERA5_precip_ds'
+    os.makedirs(precip_fold, exist_ok=True)
+
+    for y in tqdm(range(1940, 2024), desc = 'Downloading ERA5 precipitation reanalysis data'):
+
+        dataset = "reanalysis-era5-single-levels"
+        request = {
+            "product_type": ["reanalysis"],
+            "variable": ["total_precipitation"],
+            "year": [str(y)],
+            "month": [
+                "01", "02", "03",
+                "04", "05", "06",
+                "07", "08", "09",
+                "10", "11", "12"
+            ],
+            "day": [
+                "01", "02", "03",
+                "04", "05", "06",
+                "07", "08", "09",
+                "10", "11", "12",
+                "13", "14", "15",
+                "16", "17", "18",
+                "19", "20", "21",
+                "22", "23", "24",
+                "25", "26", "27",
+                "28", "29", "30",
+                "31"
+            ],
+            "time": [
+                "00:00", "01:00", "02:00",
+                "03:00", "04:00", "05:00",
+                "06:00", "07:00", "08:00",
+                "09:00", "10:00", "11:00",
+                "12:00", "13:00", "14:00",
+                "15:00", "16:00", "17:00",
+                "18:00", "19:00", "20:00",
+                "21:00", "22:00", "23:00"
+            ],
+            "data_format": "grib",
+            "download_format": "unarchived",
+            "area": coords
+        }
+
+        client = cdsapi.Client()
+        client.retrieve(dataset, request).download(f'{precip_fold}/{y}_ds.grib')
+
+
 # %% WTs computation
 """ Functions to compute Weather Types using Beck classification (Beck, 2000)"""
 import pandas as pd
@@ -147,7 +284,7 @@ import cartopy.feature as cfeature
 from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
 from datetime import datetime
 
-def plot_p_field(p_field, date_str, savepath):
+def plot_p_field(p_field, valid_time, savepath):
     """
     Function to plot the +24h cumulated precipitation field forecasted by the GFS for the current date analyzed.
     
@@ -156,12 +293,14 @@ def plot_p_field(p_field, date_str, savepath):
     """
 
     # Define custom levels and colors
-    levels = [0, 0.1, 0.5, 1, 2, 3, 5, 7, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 125, 150, 200, 300]
+    levels = [0.1, 0.2, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 30, 40, 50, 60, 80, 100, 125, 150]
     colors = [
-        '#FFFFFF', '#E0FFFF', '#B0E0E6', '#87CEFA', '#4682B4', '#0000FF', '#00008B', '#32CD32', '#228B22', '#006400',
-        '#FFD700', '#FFC300', '#FFA500', '#FF8C00', '#FF4500', '#FF6347', '#FF0000', '#CD5C5C', '#8B0000', '#800080',
-        '#A020F0', '#DA70D6', '#FF00FF', '#FF1493', '#8B008B', '#4B0082',
+        '#FFFFFF', '#E0FFFF', '#B0E0E6', '#87CEFA', '#4682B4', '#0000FF', '#00008B', '#32CD32', '#228B22', '#006400', '#FFD700', 
+        '#FFC300', '#FFA500', '#FF8C00', '#FF4500', '#FF6347', '#FF0000', '#CD5C5C', '#8B0000', '#800080', '#A020F0',
+        '#DA70D6', '#FF00FF', '#FFB6C1', '#D3D3D3', '#A9A9A9',
     ]
+
+
 
     # Main cities to plot (add your own city coordinates)
     cities = {
@@ -179,10 +318,10 @@ def plot_p_field(p_field, date_str, savepath):
 
     contour = ax.contourf(longitudes, latitudes, p_field.values, levels=levels[:-1], colors=colors, transform=ccrs.PlateCarree(), extend='both')
     # contour_lines = ax.contour(longitudes, latitudes, p_field.values, levels=levels, colors='black', linewidths=0.5, transform=ccrs.PlateCarree())
-    norm = BoundaryNorm(boundaries=levels, ncolors=len(colors)-1)
+    # norm = BoundaryNorm(boundaries=levels, ncolors=len(colors))
     
     # Add colorbar
-    cbar = plt.colorbar(contour, label='Precipitation (m)', ax=ax, ticks=levels)
+    cbar = plt.colorbar(contour, label='Precipitation (mm)', ax=ax, ticks=levels)
     cbar.set_ticks(levels)
     cbar.set_ticklabels([str(i) for i in levels])
     cbar.ax.invert_yaxis()
@@ -190,7 +329,7 @@ def plot_p_field(p_field, date_str, savepath):
     # Add labels and title
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
-    ax.set_title(f'Precipitation Field - {datetime.strptime(date_str, "%Y%m%d").date()}')
+    ax.set_title(f'Precipitation Field - {valid_time}')
 
     # Add coastlines and borders
     ax.coastlines(resolution='10m', color='black', linewidth=1)
@@ -203,7 +342,8 @@ def plot_p_field(p_field, date_str, savepath):
 
     # Save the plot
     plt.savefig(savepath)
-
+    plt.close()
+    # plt.show()
 # %% plot GPT fields
 import matplotlib.pyplot as plt
 import numpy as np
@@ -293,7 +433,7 @@ def plot_gpt(field1, field2, lon, lat, title1, title2, vmin, vmax, savepath):
 
 
 # %% Computation of analog's precipitation fields
-def compute_tot_precip(date, ds):
+def compute_hourly_era5_ds(date, ds, ref_date):
     """
     Computation of the 24h cumulated precipitation field from ERA5 Reanalysis using 'date' as starting time
 
@@ -304,21 +444,42 @@ def compute_tot_precip(date, ds):
     OUTPUT:
     - tot_precip: float, total 24 cumulated precipitation field calculated in millimeters (mm).
     """
-    
+
     start_date = date - pd.Timedelta(days=1)
     end_date = date + pd.Timedelta(days=1)
 
     ds_cat = ds.sel(time=slice(start_date, end_date))
-    tot_precip = 0
-
+    data_array_list = []
     for day in range(1, ds_cat.sizes['time']):
         for tstep in range(0, ds_cat.sizes['step']):
             if (day == 1 and tstep in [0, 1, 2, 3, 4, 5]) or (day == ds_cat.sizes['time']-1 and tstep in [6, 7, 8, 9, 10, 11]):  # Skip first values belonging to the day before
                 continue
-            field = ds_cat.isel(time=day).isel(step=tstep).tp.values
-            tot_precip += field * 1000  # mm
+            field_ds = ds_cat.isel(time=day).isel(step=tstep)
+            field = field_ds.tp.values
+            norm_field = normalize_field(field, date, ref_date)
 
-    return tot_precip
+            valid_time = field_ds.valid_time.values
+            start_acc_time = valid_time - np.timedelta64(1, 'h')
+            
+            ds = xr.DataArray(
+                data=field,  # precip field
+                dims=['latitude', 'longitude'],
+                coords={
+                    'latitude': field_ds.latitude.values, 
+                    'longitude': field_ds.longitude.values,
+                    'an_day': date,  
+                    'valid_time': valid_time,
+                    'start_acc_time': start_acc_time,
+                }
+            )
+            ds.attrs.update(field_ds.attrs) # Add attributes
+            data_array_list.append(ds)
+
+
+    analog_ds = xr.concat(data_array_list, dim='valid_time')
+    analog_ds.attrs.update(field_ds.attrs)
+
+    return analog_ds
 
 
 def normalize_field(field, an_date, ref_date):
@@ -346,8 +507,7 @@ def normalize_field(field, an_date, ref_date):
     n_day = (ref_date - pd.Timestamp(ref_date.year, 1, 1)).days + 1
     ref_av = ds['av_field'].sel(day_of_year=n_day, method='nearest').values
     ref_sd = ds['std_field'].sel(day_of_year=n_day, method='nearest').values
-
     norm_field = ref_sd * ((field - an_av) / an_sd) + ref_av
-
+    norm_field[norm_field < 0] = 0
     return norm_field
 

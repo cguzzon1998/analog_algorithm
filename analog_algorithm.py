@@ -7,7 +7,7 @@ def gfs_module(date, syn_coords, mes_coords):
         1. Download of the GFS output files for the 00 UTC run of the model
         2. Extract geopotential (GPT) fields Z500 and Z1000
         3. Compute weather types (WTs) for GPT field at 500 and 1000 hPa
-        4. Save +24 cumulated precipitation field forecasted by GFS and its map as png figure
+        4. Save NetCDF file of the precipitation field forecasted by GFS, for forecast times from +001h to +024h
 
     INPUT:
         - Date: today date in datetime format
@@ -15,7 +15,7 @@ def gfs_module(date, syn_coords, mes_coords):
         - mes_coords: coordinate of the mesoscale domain to extract the precipitation field
     
     OUTPUT: all saved in the folder "output/yyyymmdd/"
-        - gfs_precip_field.nc -> NetCDF file with the +24 cumulated precipitation field forecasted by GFS
+        - gfs_forecasted_p_field_0_24h.nc -> NetCDF file with the precipitation field forecasted by GFS
         - 24h_precip_field_GFS.png -> Map of the forecasted precipitation field
     """
     # %% 1. Download GFS files
@@ -23,16 +23,11 @@ def gfs_module(date, syn_coords, mes_coords):
     import os
     import datetime
     import requests
+    from tqdm import tqdm
 
     date_str = date.strftime('%Y%m%d')
 
     base_url = f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.{date_str}/00/atmos/" # Construct the URL
-
-    # List of files to download
-    files_to_download = [
-        'gfs.t00z.pgrb2.0p25.f000',
-        'gfs.t00z.pgrb2.0p25.f024'
-    ]
 
     # Create the 'input' directory if it doesn't exist
     path = 'input/gfs_files'
@@ -41,12 +36,13 @@ def gfs_module(date, syn_coords, mes_coords):
     else:
         os.makedirs(path, exist_ok=True) # Create dir
 
-        # Download each file
-        print('Downloading most recent GFS run:')
-        for file_name in files_to_download:
+        # List of files to download
+        for i in tqdm(range(0,25), desc = 'Downloading most recent GFS run:', leave = False):
+            file_name = f'gfs.t00z.pgrb2.0p25.f{i:03}'
+
             file_url = f'{base_url}{file_name}'
             response = requests.get(file_url)
-            
+                
             # Check if the request was successful
             if response.status_code == 200:
                 # Save the file in the 'input' directory
@@ -55,7 +51,6 @@ def gfs_module(date, syn_coords, mes_coords):
                 print(f'Downloaded: {file_name}')
             else:
                 print(f'Failed to download: {file_name}, Status code: {response.status_code}')
-
 
     # %% 2. Extract GPT fields (Z500, Z100)
     import xarray as xr
@@ -85,25 +80,51 @@ def gfs_module(date, syn_coords, mes_coords):
     print(f'Z500: {z500_wt}')
     print(f'Z1000: {z1000_wt}')
 
-    # %% 4. Save GFS forecasted +24h precipitation field
+    # %% 4. Build and save GFS forecasted +24h precipitation field, with hourly step of accumulation
     from functions import plot_p_field
 
-    ds_precip = xr.open_dataset(f'{path}/gfs.t00z.pgrb2.0p25.f024', engine='cfgrib', 
-                                filter_by_keys={'stepType': 'accum', 'typeOfLevel': 'surface'})['tp']
+    data_array_list = []
+    for i in tqdm(range(1,25), desc = 'Computing hourly GFS precipitation field', leave = False):
 
-    p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(mes_coords[2], mes_coords[3]))
-    
-    plot_p_field(p_field, date_str, savepath = f'output/{date_str}/24h_precip_field_GFS.png') # plot precipitation field
+        ds_precip = xr.open_dataset(f'{path}/gfs.t00z.pgrb2.0p25.f{i:03}', engine='cfgrib', 
+                                    filter_by_keys={'stepType': 'accum', 'typeOfLevel': 'surface'})['tp']
+
+        p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(mes_coords[2], mes_coords[3]))
+        
+        # plot_p_field(p_field, valid_time, savepath = f'output/{date_str}/{valid_time}.png') # plot precipitation field
+        # Extract times
+        time = p_field.time.values
+        valid_time = p_field.valid_time.values
+        step = p_field.step.values
+        
+        ds = xr.DataArray(
+            data=p_field.values,  # precip field
+            dims=['latitude', 'longitude'],
+            coords={
+                'latitude': p_field.latitude.values, 
+                'longitude': p_field.longitude.values,  
+                'time': time,  
+                'step': step, 
+                'valid_time': valid_time
+            }
+        )
+        ds.attrs.update(ds_precip.attrs) # Add attributes
+        data_array_list.append(ds)
+
+
+    gfs_ds = xr.concat(data_array_list, dim='time')
+    gfs_ds.attrs.update(ds_precip.attrs)
+
 
     # Save p_field as netcdf file
-    output_fp = f'output/{date_str}/gfs_precip_field.nc'
+    output_fp = f'output/{date_str}/gfs_forecasted_p_field_0_24h.nc'
     p_field.to_netcdf(output_fp)
 
     # %% Return Z500, Z100, WTs
     return z500, z1000, z500_wt, z1000_wt
 
 # 2. Analogs Computation Module
-def analogs_module(date, z500, z1000, z500_wt, z1000_wt):
+def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     """
     Identifies and ranks analog dates based on geopotential heights (z500, z1000) and their respective weather types.
     The module computes scores for each analog candidate and saves the top analogs
@@ -122,7 +143,7 @@ def analogs_module(date, z500, z1000, z500_wt, z1000_wt):
     - PNG files of the geopotential fields for the top 10 analogs saved in the 'analog_gpt_field' folder.
     """
    
-    date_str = date.strftime('%Y%m%d')
+    date_str = ref_date.strftime('%Y%m%d')
 
     # a: Read WTs classification of ERA5 Reanalysis and subsets analogs candidates based on WTs
     import pandas as pd
@@ -132,7 +153,7 @@ def analogs_module(date, z500, z1000, z500_wt, z1000_wt):
     era5_wt = pd.read_csv(filepath, na_filter=False)
     analog_candidate = era5_wt.loc[(era5_wt['wt_500'] == z500_wt) & ((era5_wt['wt_1000'] == z1000_wt))]['Date'].tolist()
     # Exclude analog belonging to the same year of the reference date
-    ref_year = date.year
+    ref_year = ref_date.year
     analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year]
 
     # b: Analog's ranking
@@ -191,9 +212,9 @@ def analogs_module(date, z500, z1000, z500_wt, z1000_wt):
         fold = f'output/{date_str}/analog_gpt_field'
         os.makedirs(fold, exist_ok=True)
 
-        plot_gpt(z500, z500_an, ds_500.longitude, ds_500.latitude, title1=f'Z500 - Target day: {date}',
+        plot_gpt(z500, z500_an, ds_500.longitude, ds_500.latitude, title1=f'Z500 - Target day: {ref_date.date()}',
                  title2=f'Z500 - Analog {idx} - {an_date}', vmin=4700, vmax=6080, savepath=f'{fold}/z500_analog_{idx}.png')
-        plot_gpt(z1000, z1000_an, ds_1000.longitude, ds_1000.latitude, title1=f'Z1000 - Target day: {date}', 
+        plot_gpt(z1000, z1000_an, ds_1000.longitude, ds_1000.latitude, title1=f'Z1000 - Target day: {ref_date.date()}', 
                  title2=f'Z1000 - Analog {idx} - {an_date}', vmin=-300, vmax=300, savepath=f'{fold}/z1000_analog_{idx}.png')
 
     return top_analogs
@@ -210,10 +231,9 @@ def an_precipitation_module(today, an_datelist):
     - an_datelist: list of str, list of analog dates in 'YYYY-MM-DD' format to process.
 
     Output:
-    - NetCDF files containing the normalized 24-hour cumulated precipitation for each analog date,
+    - NetCDF files containing the normalized hourly cumulated precipitation from time +000 to +024, for each analog date,
       saved in the folder 'analog_nc'
-    - PNG files of the plotted precipitation fields for each analog date, 
-      saved in the folder 'analog_p_field'
+
     """
 
     from tqdm import tqdm
@@ -221,7 +241,7 @@ def an_precipitation_module(today, an_datelist):
     import xarray as xr
     import os
     import numpy as np
-    from functions import compute_tot_precip, normalize_field, plot_p_field
+    from functions import plot_p_field, compute_hourly_era5_ds
 
     ref_date = pd.to_datetime(today) # trasform today in date format (ref_date)
     idx = 0
@@ -231,42 +251,12 @@ def an_precipitation_module(today, an_datelist):
         year = an_date.year # Extract year of the analog date
         filepath = f'input/ERA5_precip_ds/{year}_ds.grib'
         with xr.open_dataset(filepath, engine='cfgrib') as ds:
-            p_field = compute_tot_precip(an_date, ds) # Compute 24h cumulated precipiotation field
-            norm_tot_p = normalize_field(p_field, an_date, ref_date) # Seasonal standardization of the precipitation field
-            norm_tot_p[norm_tot_p < 0] = 0
-            
-            # Create DataArray of the analog precipitation field
-            cum_date = an_date + pd.DateOffset(days=1)
-
-            norm_field = xr.DataArray(
-                norm_tot_p,
-                dims=['latitude', 'longitude'],  # Define the dimensions
-                coords={
-                    'time': an_date,  # Use a list to include the date as a single time coordinate
-                    'cumulation_time': cum_date, # Cumulation date
-                    'latitude': ds.latitude.values,  # Use latitude values from ds
-                    'longitude': ds.longitude.values  # Use longitude values from ds
-                },
-                name='tp'  # Set the name of the DataArray
-            )
-            # Assign attributes
-            norm_field.attrs['long_name'] = '24-hour cumulated precipitation'
-            norm_field.attrs['units'] = 'mm'
-            norm_field.attrs['grid_mapping'] = 'crs'
-            norm_field.attrs['Cumulation time'] = '24 hours'
-            norm_field.attrs['history'] = f'Data processed on {pd.to_datetime("now").strftime("%Y-%m-%d %H:%M:%S")}'
-            norm_field.attrs['featureType'] = 'timeSeries'
+            analog_ds = compute_hourly_era5_ds(an_date, ds, ref_date)
 
             # Save as NetCDF file
             folder = f"output/{ref_date.strftime('%Y%m%d')}/analog_nc"
             os.makedirs(folder, exist_ok = True)  # Specify your output file path
-            norm_field.to_netcdf(f'{folder}/Analog_{idx}.nc')
-
-        # Plot the Analogs' precipitation field maps
-        fold = f"output/{ref_date.strftime('%Y%m%d')}/analog_p_field"
-        os.makedirs(fold, exist_ok=True)
-        savepath = f'{fold}/24h_precip_field_analog_{idx}.png'
-        plot_p_field(norm_field, an_date.strftime('%Y%m%d'), savepath)
+            analog_ds.to_netcdf(f'{folder}/Analog_{idx}.nc')
 
 
 def main():
@@ -274,12 +264,18 @@ def main():
     import os
     import shutil
     import pandas as pd
+    from functions import download_era5_gpt, download_era5_precip
     
     """ Setting of the function:
             1. Definition of the Target Day to analyze (Today or previous days)
             2. Definition of the spatial domain: 
                 - Synoptic domain: to evaluate analogs based on Geopotential (GPT) fields
-                - Mesoscale domain: to evaluate precipitation field (Catalonia region)"""
+                - Mesoscale domain: to evaluate precipitation field (Catalonia region)
+            3. Download of ERA5 data:
+                - era5_download = true : run of the ERA5 api to download geopotential fields and precipitation fields
+                                         for the synoptic and the mesoscale domain respectively
+                - era5_download = false : no download"""
+            
 
     ############### Definition of the target date ################
     today = datetime.today() # Get today's date
@@ -305,6 +301,10 @@ def main():
     mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
     ###############################################################
 
+    ############# Download of ERA5 reanalysis fields ##############
+    era5_download = True  # False
+    ###############################################################
+
 # %%
     """ Running of the modules of the Analog Algorithm
         1. GFS Module: extraction of GPT fields from GFS forecast for the target day;
@@ -312,6 +312,13 @@ def main():
         2. Analog Module: computation of the best 10 analogs
         3. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs"""
     
+    # Downaload of ERA5 Reanalysis fields
+    if era5_download == True:
+        print('Downloading ERA5 reanalysis data:')
+        download_era5_gpt(level = "500", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 500 hPa gpt ds
+        download_era5_gpt(level = "1000", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 1000 hPa gpt ds
+        download_era5_precip(coords=[mes_lat_n,mes_lon_w,mes_lat_s,mes_lon_e]) # Download precipitation ds
+
     # 1. Call GFS Module
     print('Running GFS Module:')
     z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords)
