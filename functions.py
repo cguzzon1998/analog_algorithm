@@ -78,7 +78,6 @@ def download_era5_gpt(level, coords):
     client = cdsapi.Client()
     client.retrieve(dataset, request).download(f'{gpt_fold}/geopotential_data_{level}.grib')
    
-
 def download_era5_precip(coords):
 
     """ API of ERA5 to download reanalysis data of hourly cumulated precipitation data for a specified region
@@ -90,7 +89,7 @@ def download_era5_precip(coords):
     precip_fold = 'test/ERA5_precip_ds'
     os.makedirs(precip_fold, exist_ok=True)
 
-    for y in tqdm(range(1940, 2024), desc = 'Downloading ERA5 precipitation reanalysis data'):
+    for y in tqdm(range(1940, 2024), desc = 'Downloading ERA5 precipitation reanalysis data', leave = False):
 
         dataset = "reanalysis-era5-single-levels"
         request = {

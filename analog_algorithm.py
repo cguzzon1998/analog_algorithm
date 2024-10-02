@@ -302,33 +302,38 @@ def main():
     ###############################################################
 
     ############# Download of ERA5 reanalysis fields ##############
-    era5_download = True  # False
+    """ !!! WARNING: Set to True only if you have not downloaded ERA5 data yet, 
+        the download requied large amount of time and memory space !!! """
+    era5_download = False  # True
     ###############################################################
 
-# %%
+# %% Analog Algorithm
     """ Running of the modules of the Analog Algorithm
-        1. GFS Module: extraction of GPT fields from GFS forecast for the target day;
+        1. Download of ERA5 reanalysis data: only if era5_download set to True
+        2. GFS Module: extraction of GPT fields from GFS forecast for the target day;
            Save the predicted 24h cumulated precipitation field
-        2. Analog Module: computation of the best 10 analogs
-        3. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs"""
+        3. Analog Module: computation of the best 10 analogs
+        4. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs"""
     
-    # Downaload of ERA5 Reanalysis fields
+    # 1. Downaload of ERA5 Reanalysis fields
     if era5_download == True:
         print('Downloading ERA5 reanalysis data:')
         download_era5_gpt(level = "500", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 500 hPa gpt ds
         download_era5_gpt(level = "1000", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 1000 hPa gpt ds
         download_era5_precip(coords=[mes_lat_n,mes_lon_w,mes_lat_s,mes_lon_e]) # Download precipitation ds
+        print('\n')
 
-    # 1. Call GFS Module
+    # 2. Call GFS Module
     print('Running GFS Module:')
     z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords)
     print('\n')
-    # 2. Call Analog Computation Module
+
+    # 3. Call Analog Computation Module
     print('Running Analog Module:')
     analog_table = analogs_module(today, z500, z1000, z500_wt, z1000_wt)
     print('\n')
 
-    # 3. Call Analog Precipitation Module
+    # 4. Call Analog Precipitation Module
     print('Running Analog Precipitation Module:')
     an_precipitation_module(today, analog_table['Date'])
     print('\n')
