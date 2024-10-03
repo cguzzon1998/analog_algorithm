@@ -2,7 +2,7 @@
 
 This repository contains the **Analog Algorithm**, a Python-based tool for real-time forecast precipitation field through analogs. The primary goal is to improve the forecast of the GFS for the 24-hour following the analyzed target day, looking at observed precipitation field occurred during historical days, that share similar synoptic patterns, which are defined as analogs.
 
-# Table of Contents
+## Table of Contents
 - [Installation](#installation)
 - [Setup](#setup)
 - [Usage](#usage)
@@ -12,9 +12,9 @@ This repository contains the **Analog Algorithm**, a Python-based tool for real-
 - [Contact](#contact)
 
 
-# Installation
+## Installation
 
-## 1. Clone the repository from GitHub
+### 1. Clone the repository from GitHub
 
 To get started, clone the repository from GitHub:
 
@@ -27,14 +27,14 @@ Then navigate to the cloned directory:
 cd analog_algorithm
 ```
 
-## 2. Install python dependencies:
+### 2. Install python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-## 3. Set up of Copernicus ERA5 API:
+### 3. Set up of Copernicus ERA5 API:
 
-### Step 1. Install the `cdsapi` Python package
+**Step 1. Install the `cdsapi` Python package**
 
 First, you need to install the `cdsapi` Python library, which is required to interact with the Copernicus Climate Data Store API. You can install it using `pip`:
 
@@ -48,7 +48,7 @@ Alternatively, if you are using a `conda` environment:
 conda install -c conda-forge cdsapi
 ```
 
-### Step 2: Obtain your API Key from Copernicus Climate Data Store (CDS)
+**Step 2: Obtain your API Key from Copernicus Climate Data Store (CDS)**
 
 1. Register at the [Copernicus Climate Data Store](https://cds.climate.copernicus.eu).
 2. Log in to your account.
@@ -61,7 +61,7 @@ url: https://cds.climate.copernicus.eu/api/v2
 key: <your-UID>:<your-API-key>
 ```
 
-### Step 3: Configure the API Key
+**Step 3: Configure the API Key**
 
 To configure your system to use the API key, create a file named `.cdsapirc` in your home directory (or directly write it to the configuration if it's already set up).
 
@@ -81,8 +81,7 @@ Replace `<your-UID>` and `<your-API-key>` with the values from your Copernicus a
 Save the file (`Ctrl + X`, then `Y`, then `Enter`).
 
 
-
-# Setup
+## Setup
 The `analog_algorithm.py` requires a few setup steps before execution, all of which are managed within the `main()` function. These steps include:
 
 ### 1. Definition of the Target Date
@@ -125,7 +124,7 @@ ERA5 API uses for download the same coordinates specified in the previous sectio
     era5_download = False  # True
 ```
 
-# Usage:
+## Usage:
 The following command can be used to run the script:
 
 ```bash
@@ -135,7 +134,7 @@ python analog_algorithm.py
 Make sure the necessary input files (e.g., ERA5 datasets and classification CSVs) are available in the `input/` directory.
 
 
-# Overview:
+## Overview:
 The **Analog algorithm**, contained in the script *analog_algorithm.py* is divided into 4 modules, that are called individually from the *main()* function. Here the 4 modules are presented briefly:
 
 1. **Download of ERA5 data**
@@ -162,7 +161,7 @@ The **Analog algorithm**, contained in the script *analog_algorithm.py* is divid
 
 All the addtional functions needed to run the algorithm are contained in the script *functions.py*
 
-# Directory Structure
+## Directory Structure
 
 ### *input/*
 After the clone of the repository from GitHub the input folder will contain:
@@ -181,7 +180,10 @@ It contains a folder for each day for which the algorithm has been run in the fo
 
 ## References
 
-- Philipp, A., Bartholy, J., Beck, C., Erpicum, M., Esteban, P., Fettweis, X., Huth, R., James, P., Jourdain, S., Kreienkamp, F., Krennert, T., Lykoudis, S., Michalides, S. C., Pianko-Kluczy´nska, K., Post, P.,´Alvarez, D. F. R., Schiemann, R. K. H., Spekat, A., and Tymvios, F. (2010). Cost733cat - a database of weather and circulation type classifications. Physics and Chemistry of The Earth, 35:360–373
+- **Philipp, A.**, Bartholy, J., Beck, C., Erpicum, M., Esteban, P., Fettweis, X., Huth, R., James, P., Jourdain, S., Kreienkamp, F., Krennert, T., Lykoudis, S., Michalides, S. C., Pianko-Kluczy´nska, K., Post, P.,´Alvarez, D. F. R., Schiemann, R. K. H., Spekat, A., and Tymvios, F. (2010). **Cost733cat - a database of weather and circulation type classifications.** Physics and Chemistry of The Earth, 35:360–373
+
+- **Beck, C.** (2000). Zirkulationsdynamische Variabilit¨at
+im Bereich Nordatlantik-Europa seit 1780
 
 ## Contact
 
