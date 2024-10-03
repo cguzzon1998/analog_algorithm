@@ -180,7 +180,8 @@ It contains a folder for each day for which the algorithm has been run in the fo
 
 ## References
 
-- **Philipp, A.**, Bartholy, J., Beck, C., Erpicum, M., Esteban, P., Fettweis, X., Huth, R., James, P., Jourdain, S., Kreienkamp, F., Krennert, T., Lykoudis, S., Michalides, S. C., Pianko-Kluczy´nska, K., Post, P.,´Alvarez, D. F. R., Schiemann, R. K. H., Spekat, A., and Tymvios, F. (2010). **Cost733cat - a database of weather and circulation type classifications.** Physics and Chemistry of The Earth, 35:360–373
+- **Philipp, A.**, Bartholy, J., Beck, C., Erpicum, M., Esteban, P., Fettweis, X., Huth, R., James, P., Jourdain, S., Kreienkamp, F., Krennert, T., Lykoudis, S., Michalides, S. C., Pianko-Kluczy´nska, K., Post, P.,´Alvarez, D. F. R., Schiemann, R. K. H., Spekat, A., and Tymvios, F. (2010).
+Cost733cat - a database of weather and circulation type classifications. Physics and Chemistry of The Earth, 35:360–373
 
 - **Beck, C.** (2000). Zirkulationsdynamische Variabilit¨at
 im Bereich Nordatlantik-Europa seit 1780
