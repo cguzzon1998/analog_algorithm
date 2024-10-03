@@ -1,6 +1,95 @@
-import pdb
+# Main function
+def main():
+    from datetime import datetime, timedelta
+    import os
+    import shutil
+    import pandas as pd
+    from functions import download_era5_gpt, download_era5_precip
+    
+    ##########################################################################################################################
+    """ Setting of the function:
+            1. Definition of the Target Day to analyze (Today or previous days)
+            2. Definition of the spatial domain: 
+                - Synoptic domain: to evaluate analogs based on Geopotential (GPT) fields
+                - Mesoscale domain: to evaluate precipitation field (Catalonia region)
+            3. Download of ERA5 reanalysis fields:
+                - era5_download = true : run of the ERA5 api to download geopotential fields and precipitation fields
+                                         for the synoptic and the mesoscale domain respectively
+                - era5_download = false : no download"""
+            
 
-# 1. GFS Module
+    ############### Definition of the target date ################
+    today = datetime.today() # Get today's date
+    date_str = today.strftime('%Y%m%d')
+    out_folder = f'output/{date_str}' # Create the output folder
+    os.makedirs(out_folder, exist_ok=True)
+    
+    
+    ############## Definition of the spatial domain ##############
+    # Synoptic domain: to extract GPT field and compute WTs
+    syn_lat_s = 31
+    syn_lat_n = 48
+    syn_lon_w = -17
+    syn_lon_e = 9
+    syn_coords = [syn_lat_n, syn_lat_s, syn_lon_w, syn_lon_e]
+
+    # Mesoscale domain: to extract precipitation field
+    mes_lat_s = 40
+    mes_lat_n = 43
+    mes_lon_w = 0
+    mes_lon_e = 3.5
+    mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
+
+
+    ############# Download of ERA5 reanalysis fields ##############
+    """ !!! WARNING: Set to True only if you have not downloaded ERA5 data yet, 
+        the download requied large amount of time and memory space !!! """
+    era5_download = False  # True
+    
+##########################################################################################################################
+
+# %% Analog Algorithm
+    """ Running of the modules of the Analog Algorithm
+        1. Download of ERA5 reanalysis data: only if era5_download set to True
+        2. GFS Module: extraction of GPT fields from GFS forecast for the target day;
+           Save the predicted 24h cumulated precipitation field
+        3. Analog Module: computation of the best 10 analogs
+        4. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs"""
+    
+    # 1. Downaload of ERA5 Reanalysis fields
+    if era5_download == True:
+        print('Downloading ERA5 reanalysis data:')
+        download_era5_gpt(level = "500", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 500 hPa gpt ds
+        download_era5_gpt(level = "1000", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 1000 hPa gpt ds
+        download_era5_precip(coords=[mes_lat_n,mes_lon_w,mes_lat_s,mes_lon_e]) # Download precipitation ds
+        print('\n')
+
+    # 2. Call GFS Module
+    print('Running GFS Module:')
+    z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords)
+    print('\n')
+
+    # 3. Call Analog Computation Module
+    print('Running Analog Module:')
+    analog_table = analogs_module(today, z500, z1000, z500_wt, z1000_wt)
+    print('\n')
+
+    # 4. Call Analog Precipitation Module
+    print('Running Analog Precipitation Module:')
+    an_precipitation_module(today, analog_table['Date'])
+    print('\n')
+
+    # Delate GFS forecast
+    path = 'input/gfs_files'
+    try:
+        shutil.rmtree(path)
+        print('GFS files correcly delated')
+    except OSError as e:
+        print(f'Error: {e}')
+
+
+""" Modules """
+# 2. GFS Module
 def gfs_module(date, syn_coords, mes_coords):
     """
     GFS module: 
@@ -106,7 +195,8 @@ def gfs_module(date, syn_coords, mes_coords):
                 'time': time,  
                 'step': step, 
                 'valid_time': valid_time
-            }
+            },
+            name='tp'
         )
         ds.attrs.update(ds_precip.attrs) # Add attributes
         data_array_list.append(ds)
@@ -115,15 +205,14 @@ def gfs_module(date, syn_coords, mes_coords):
     gfs_ds = xr.concat(data_array_list, dim='time')
     gfs_ds.attrs.update(ds_precip.attrs)
 
-
     # Save p_field as netcdf file
     output_fp = f'output/{date_str}/gfs_forecasted_p_field_0_24h.nc'
-    p_field.to_netcdf(output_fp)
+    gfs_ds.to_netcdf(output_fp)
 
     # %% Return Z500, Z100, WTs
     return z500, z1000, z500_wt, z1000_wt
 
-# 2. Analogs Computation Module
+# 3. Analogs Computation Module
 def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     """
     Identifies and ranks analog dates based on geopotential heights (z500, z1000) and their respective weather types.
@@ -219,7 +308,7 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
 
     return top_analogs
 
-# 3. Analog Precipitation Module
+# 4. Analog Precipitation Module
 def an_precipitation_module(today, an_datelist):
     """
     Processes analog precipitation data for specified dates, computes total precipitation,
@@ -257,94 +346,6 @@ def an_precipitation_module(today, an_datelist):
             folder = f"output/{ref_date.strftime('%Y%m%d')}/analog_nc"
             os.makedirs(folder, exist_ok = True)  # Specify your output file path
             analog_ds.to_netcdf(f'{folder}/Analog_{idx}.nc')
-
-
-def main():
-    from datetime import datetime, timedelta
-    import os
-    import shutil
-    import pandas as pd
-    from functions import download_era5_gpt, download_era5_precip
-    
-    """ Setting of the function:
-            1. Definition of the Target Day to analyze (Today or previous days)
-            2. Definition of the spatial domain: 
-                - Synoptic domain: to evaluate analogs based on Geopotential (GPT) fields
-                - Mesoscale domain: to evaluate precipitation field (Catalonia region)
-            3. Download of ERA5 data:
-                - era5_download = true : run of the ERA5 api to download geopotential fields and precipitation fields
-                                         for the synoptic and the mesoscale domain respectively
-                - era5_download = false : no download"""
-            
-
-    ############### Definition of the target date ################
-    today = datetime.today() # Get today's date
-    date_str = today.strftime('%Y%m%d')
-    out_folder = f'output/{date_str}' # Create the output folder
-    os.makedirs(out_folder, exist_ok=True)
-    ##############################################################
-
-
-    ############## Definition of the spatial domain ##############
-    # Synoptic domain: to extract GPT field and compute WTs
-    syn_lat_s = 31
-    syn_lat_n = 48
-    syn_lon_w = -17
-    syn_lon_e = 9
-    syn_coords = [syn_lat_n, syn_lat_s, syn_lon_w, syn_lon_e]
-
-    # Mesoscale domain: to extract precipitation field
-    mes_lat_s = 40
-    mes_lat_n = 43
-    mes_lon_w = 0
-    mes_lon_e = 3.5
-    mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
-    ###############################################################
-
-    ############# Download of ERA5 reanalysis fields ##############
-    """ !!! WARNING: Set to True only if you have not downloaded ERA5 data yet, 
-        the download requied large amount of time and memory space !!! """
-    era5_download = False  # True
-    ###############################################################
-
-# %% Analog Algorithm
-    """ Running of the modules of the Analog Algorithm
-        1. Download of ERA5 reanalysis data: only if era5_download set to True
-        2. GFS Module: extraction of GPT fields from GFS forecast for the target day;
-           Save the predicted 24h cumulated precipitation field
-        3. Analog Module: computation of the best 10 analogs
-        4. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs"""
-    
-    # 1. Downaload of ERA5 Reanalysis fields
-    if era5_download == True:
-        print('Downloading ERA5 reanalysis data:')
-        download_era5_gpt(level = "500", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 500 hPa gpt ds
-        download_era5_gpt(level = "1000", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 1000 hPa gpt ds
-        download_era5_precip(coords=[mes_lat_n,mes_lon_w,mes_lat_s,mes_lon_e]) # Download precipitation ds
-        print('\n')
-
-    # 2. Call GFS Module
-    print('Running GFS Module:')
-    z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords)
-    print('\n')
-
-    # 3. Call Analog Computation Module
-    print('Running Analog Module:')
-    analog_table = analogs_module(today, z500, z1000, z500_wt, z1000_wt)
-    print('\n')
-
-    # 4. Call Analog Precipitation Module
-    print('Running Analog Precipitation Module:')
-    an_precipitation_module(today, analog_table['Date'])
-    print('\n')
-
-    # Delate GFS forecast
-    path = 'input/gfs_files'
-    try:
-        shutil.rmtree(path)
-        print('GFS files correcly delated')
-    except OSError as e:
-        print(f'Error: {e}')
 
 
 if __name__ == '__main__':

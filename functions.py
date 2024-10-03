@@ -343,6 +343,7 @@ def plot_p_field(p_field, valid_time, savepath):
     plt.savefig(savepath)
     plt.close()
     # plt.show()
+
 # %% plot GPT fields
 import matplotlib.pyplot as plt
 import numpy as np
@@ -461,7 +462,7 @@ def compute_hourly_era5_ds(date, ds, ref_date):
             start_acc_time = valid_time - np.timedelta64(1, 'h')
             
             ds = xr.DataArray(
-                data=field,  # precip field
+                data=norm_field,  # precip field
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
@@ -469,7 +470,8 @@ def compute_hourly_era5_ds(date, ds, ref_date):
                     'an_day': date,  
                     'valid_time': valid_time,
                     'start_acc_time': start_acc_time,
-                }
+                },
+                name = 'tp'
             )
             ds.attrs.update(field_ds.attrs) # Add attributes
             data_array_list.append(ds)
