@@ -178,6 +178,71 @@ It contains a folder for each day for which the algorithm has been run in the fo
 - *gfs_forecasted_p_field_0_24h.nc*: netCDF file containing the GFS forecast of the hourly precipitation field for the target date, from +001 to +024h forecasting time
 - *top_analogs.csv*: csv file with the dates of the 10 best analogs computed for the target date and their score
 
+## NetCDF format
+### gfs_forecasted_p_field_0_24h.nc**:
+```plaintext
+<xarray.DataArray 'tp' (time: 24, latitude: 13, longitude: 15)> Size: 19kB
+[4680 values with dtype=float32]
+Coordinates:
+  * latitude        (latitude) float64 104B 43.0 42.75 42.5 ... 40.5 40.25 40.0
+  * longitude       (longitude) float64 120B 0.0 0.25 0.5 0.75 ... 3.0 3.25 3.5
+    init_time       datetime64[ns] 8B ...
+    valid_time      (time) datetime64[ns] 192B ...
+    start_acc_time  (time) datetime64[ns] 192B ...
+Dimensions without coordinates: time
+Attributes: (12/30)
+    GRIB_typeOfLevel:                         surface
+    GRIB_stepUnits:                           1
+    GRIB_stepType:                            accum
+    GRIB_name:                                Total Precipitation
+    GRIB_shortName:                           tp
+    GRIB_units:                               kg m**-2
+    long_name:                                Total Precipitation
+    units:                                    kg m**-2 
+```
+**Coordinates:**
+- *latitude*: resolution of 0.25º
+- *longitude*: resolution of 0.25º
+- *init_time* is the time of initialization of the GFS model run, i.e. the target day at 00 UTC
+- *valid_time* is the current time of hourly precipitation accumulation forecast, so it is the end acuumulation time (e.g: valid_time = 01:00 represents the accumulation period from 00:00 UTC to 01:00 UTC)
+- *start_acc_time* is the initial time of the accumulation period (e.g: 00:00 UTC for the accumulation period from 00:00 UTC to 01:00 UTC)
+
+**Attributes:**
+- *units*: kg m**-2 which correspond to mm (millimiters of rainfall fallen in the pixel in 1 hour period)
+
+### **Analog_i.nc**:
+
+```plaintext
+<xarray.DataArray 'tp' (valid_time: 24, latitude: 13, longitude: 15)> Size: 37kB
+[4680 values with dtype=float64]
+Coordinates:
+  * latitude        (latitude) float64 104B 43.0 42.75 42.5 ... 40.5 40.25 40.0
+  * longitude       (longitude) float64 120B 0.0 0.25 0.5 0.75 ... 3.0 3.25 3.5
+    an_day          datetime64[ns] 8B ...
+  * valid_time      (valid_time) datetime64[ns] 192B 2002-08-10T01:00:00 ... ...
+    start_acc_time  (valid_time) datetime64[ns] 192B ...
+Attributes:
+    GRIB_edition:            1
+    GRIB_centre:             ecmf
+    GRIB_centreDescription:  European Centre for Medium-Range Weather Forecasts
+    GRIB_subCentre:          0
+    Conventions:             CF-1.7
+    institution:             European Centre for Medium-Range Weather Forecasts
+    history:                 2024-10-03T13:31 GRIB to CDM+CF via cfgrib-0.9.1
+    units:                   mm
+```
+
+**Coordinates:**
+- *latitude*: resolution of 0.25º
+- *longitude*: resolution of 0.25º
+- *an_date* is the analog date at 00:00 UTC
+- *valid_time* is the current time of hourly precipitation accumulation forecast, so it is the end acuumulation time (e.g: valid_time = 01:00 represents the accumulation period from 00:00 UTC to 01:00 UTC)
+- *start_acc_time* is the initial time of the accumulation period (e.g: 00:00 UTC for the accumulation period from 00:00 UTC to 01:00 UTC)
+
+**Attributes:**
+- *units*: mm (millimiters of rainfall fallen in the pixel in 1 hour period)
+
+
 ## References
 
 - **Philipp, A.**, Bartholy, J., Beck, C., Erpicum, M., Esteban, P., Fettweis, X., Huth, R., James, P., Jourdain, S., Kreienkamp, F., Krennert, T., Lykoudis, S., Michalides, S. C., Pianko-Kluczy´nska, K., Post, P.,´Alvarez, D. F. R., Schiemann, R. K. H., Spekat, A., and Tymvios, F. (2010).
