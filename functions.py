@@ -481,8 +481,6 @@ def compute_hourly_era5_ds(date, ds, ref_date):
     analog_ds.attrs.update(field_ds.attrs)
     analog_ds.attrs['units'] = 'mm'  # Add new attribute for units
 
-    import pdb
-    pdb.set_trace()
     return analog_ds
 
 
