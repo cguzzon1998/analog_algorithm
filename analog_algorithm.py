@@ -108,9 +108,8 @@ def gfs_module(date, syn_coords, mes_coords):
         - 24h_precip_field_GFS.png -> Map of the forecasted precipitation field
     """
     # %% 1. Download GFS files
-    import datetime
+    from datetime import datetime, time
     import os
-    import datetime
     import requests
     from tqdm import tqdm
 
@@ -126,7 +125,7 @@ def gfs_module(date, syn_coords, mes_coords):
         os.makedirs(path, exist_ok=True) # Create dir
 
         # List of files to download
-        for i in tqdm(range(0,25), desc = 'Downloading most recent GFS run:', leave = False):
+        for i in tqdm(range(0,25), desc = 'Downloading most recent GFS run', leave = False):
             file_name = f'gfs.t00z.pgrb2.0p25.f{i:03}'
 
             file_url = f'{base_url}{file_name}'
@@ -173,6 +172,9 @@ def gfs_module(date, syn_coords, mes_coords):
     from functions import plot_p_field
 
     data_array_list = []
+    init_time = datetime.combine(date.date(), time(0, 0)) 
+    start_acc_time = init_time # Initializate start accumulation time variable
+
     for i in tqdm(range(1,25), desc = 'Computing hourly GFS precipitation field', leave = False):
 
         ds_precip = xr.open_dataset(f'{path}/gfs.t00z.pgrb2.0p25.f{i:03}', engine='cfgrib', 
@@ -186,28 +188,37 @@ def gfs_module(date, syn_coords, mes_coords):
         valid_time = p_field.valid_time.values
         step = p_field.step.values
         
+        # Compute hourly precipitation field:
+        if i in[1, 7, 13, 19]:
+            hourly_field = p_field.values
+        else: 
+            hourly_field = p_field.values - p_field_previous
+
         ds = xr.DataArray(
-            data=p_field.values,  # precip field
+            data=hourly_field,  # precip field
             dims=['latitude', 'longitude'],
             coords={
                 'latitude': p_field.latitude.values, 
                 'longitude': p_field.longitude.values,  
-                'time': time,  
-                'step': step, 
-                'valid_time': valid_time
+                'init_time': init_time,  
+                'valid_time': valid_time,
+                'start_acc_time': start_acc_time
+
             },
             name='tp'
         )
         ds.attrs.update(ds_precip.attrs) # Add attributes
         data_array_list.append(ds)
 
-
+        p_field_previous = p_field.values # Save the precipitation field to compute hourly field for the next step
+        start_acc_time =  p_field.valid_time.values # Save time for the next step
     gfs_ds = xr.concat(data_array_list, dim='time')
     gfs_ds.attrs.update(ds_precip.attrs)
 
     # Save p_field as netcdf file
     output_fp = f'output/{date_str}/gfs_forecasted_p_field_0_24h.nc'
     gfs_ds.to_netcdf(output_fp)
+
 
     # %% Return Z500, Z100, WTs
     return z500, z1000, z500_wt, z1000_wt

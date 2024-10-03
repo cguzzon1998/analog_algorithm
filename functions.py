@@ -455,14 +455,14 @@ def compute_hourly_era5_ds(date, ds, ref_date):
             if (day == 1 and tstep in [0, 1, 2, 3, 4, 5]) or (day == ds_cat.sizes['time']-1 and tstep in [6, 7, 8, 9, 10, 11]):  # Skip first values belonging to the day before
                 continue
             field_ds = ds_cat.isel(time=day).isel(step=tstep)
-            field = field_ds.tp.values
+            field = field_ds.tp.values*1000 # transform in mm of rainfall
             norm_field = normalize_field(field, date, ref_date)
 
             valid_time = field_ds.valid_time.values
             start_acc_time = valid_time - np.timedelta64(1, 'h')
             
             ds = xr.DataArray(
-                data=norm_field,  # precip field
+                data=field,  # precip field
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
@@ -479,7 +479,10 @@ def compute_hourly_era5_ds(date, ds, ref_date):
 
     analog_ds = xr.concat(data_array_list, dim='valid_time')
     analog_ds.attrs.update(field_ds.attrs)
+    analog_ds.attrs['units'] = 'mm'  # Add new attribute for units
 
+    import pdb
+    pdb.set_trace()
     return analog_ds
 
 
