@@ -34,6 +34,7 @@ cd analog_algorithm
    ```
 
 ### 3. Set up of Copernicus ERA5 API:
+This procedure is necessary to be able to download the data from ERA5 reanalysis directly from the API. If you already had saved ERA5 data and stored them in the input folder you can skip the set up steps.
 
 **Step 1. Install the `cdsapi` Python package**
 
