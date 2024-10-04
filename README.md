@@ -1,6 +1,6 @@
 # Analog Algorithm
 
-This repository contains the **Analog Algorithm**, a Python-based tool for real-time forecast precipitation field through analogs. The primary goal is to improve the forecast of the GFS for the 24-hour following the analyzed target day, looking at observed precipitation field occurred during historical days, that share similar synoptic patterns, which are defined as analogs.
+This repository hosts the **Analog Algorithm**, a Python-based tool designed to enhance the real-time forecasting of precipitation fields using analogs. The algorithm aims to refine the 24-hour precipitation forecast provided by the Global Forecast System (GFS) by identifying historical weather patterns, defined as *analogs*, that resemble the synoptic conditions of a given target day. By comparing the forecasted geopotential fields at 500 and 1000 hPa from the GFS with those from past events, this method leverages observed precipitation data from similar atmospheric setups to provide more accurate forecasts.
 
 ## Table of Contents
 - [Installation](#installation)
@@ -8,6 +8,7 @@ This repository contains the **Analog Algorithm**, a Python-based tool for real-
 - [Usage](#usage)
 - [Overview](#overview)
 - [Directory Structure](#directory-structure)
+- [NetCDF files format](#netcdf-files-format)
 - [References](#references)
 - [Contact](#contact)
 
@@ -148,7 +149,7 @@ The **Analog algorithm**, contained in the script *analog_algorithm.py* is divid
     - Downloads the most recent 00 UTC run of GFS forecast files for *today* (day of algorithm run)
     - Extracts GPT fields at 500 hPa (Z500) and 1000 hPa (Z1000)
     - Computes weather types (WTs) based on GPT fields
-    - Saves the hourly precipitation field forecasted by GFS from +001h to +024h valid_time as NetCDF files in the file *'output/yyyymmdd/gfs_forecasted_p_field_0_24h.nc'*, where yyyymmdd is the target date analyzed
+    - Saves the hourly precipitation field forecasted by GFS from +001h to +024h valid_time as NetCDF files in the file *'output/yyyymmdd/gfs_forecast.nc'*, where yyyymmdd is the target date analyzed
 
 3. **Analogs Computation Module**:
     - Identifies and ranks analogs comparing GPT fields forecasted by GFS at 500 and 1000 hPa with ERA5 reanalysis GPT fields, for historical days with the same WTs of the target day
@@ -172,14 +173,16 @@ After the download of ERA5 reanalysis data the following folders will be add to 
 - *ERA5_precip_ds*: containing precipitation fields databases, year by year, for the *mesoscale domain* specified in the settings
 
 ### *output/*
-It contains a folder for each day for which the algorithm has been run in the format *yyyymmdd*. Each day folder contains the following items:
+It contains a folder for each day for which the algorithm has been run in the format *yyyymmdd* (e.g. *20241004/*). Each day folder contains the following items:
 - *analog_gpt_field/*: plots of the GPT fields at 500 and 1000 hPa with the comparison between the target date and the analogs
 - *analog_nc/*: NetCDF files with the hourly precipitation fields for the best ten analogs up to +024h (from *Analog_1.nc* to *Analog_10.nc*)
-- *gfs_forecasted_p_field_0_24h.nc*: netCDF file containing the GFS forecast of the hourly precipitation field for the target date, from +001 to +024h forecasting time
+- *precip_field_plot/*: plots of the hourly cumulated precipitation fields for the 24h-period analyzed, for the 10 best analogs (*analog_i.png*) and for the GFS forecast (*gfs.png*)
+- *gfs_forecast.nc*: netCDF file containing the GFS forecast of the hourly precipitation field for the target date, from +001 to +024h forecasting time
 - *top_analogs.csv*: csv file with the dates of the 10 best analogs computed for the target date and their score
 
-## NetCDF format
-### gfs_forecasted_p_field_0_24h.nc**:
+
+## NetCDF files format
+### gfs_forecast.nc**:
 ```plaintext
 <xarray.DataArray 'tp' (time: 24, latitude: 13, longitude: 15)> Size: 19kB
 [4680 values with dtype=float32]

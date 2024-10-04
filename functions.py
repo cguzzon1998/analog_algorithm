@@ -283,13 +283,21 @@ import cartopy.feature as cfeature
 from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
 from datetime import datetime
 
-def plot_p_field(p_field, valid_time, savepath):
-    """
-    Function to plot the +24h cumulated precipitation field forecasted by the GFS for the current date analyzed.
-    
-    INPUT: p_field -> xr.DataArray of the forecasted precipitation field; date_str -> Current day analyzed
-    OUTPUT: 24h_precip_field_GFS.png, saved in the folder output
-    """
+import xarray as xr
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import numpy as np
+import pdb
+
+def plot_precip_field(ds, savepath, title):
+
+    # Number of hours (assuming 24 time steps)
+    n_hours = 24
+
+    # Set up the figure and axes for subplots
+    fig, axes = plt.subplots(nrows=4, ncols=6, figsize=(20, 15), subplot_kw={'projection': ccrs.PlateCarree()})
+    axes = axes.flatten()  # Flatten for easy indexing
 
     # Define custom levels and colors
     levels = [0.1, 0.2, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 30, 40, 50, 60, 80, 100, 125, 150]
@@ -299,50 +307,33 @@ def plot_p_field(p_field, valid_time, savepath):
         '#DA70D6', '#FF00FF', '#FFB6C1', '#D3D3D3', '#A9A9A9',
     ]
 
+    # Create a custom colormap
+    cmap = plt.matplotlib.colors.ListedColormap(colors)
 
+    # Loop over each hour to plot each field
+    for i in range(n_hours):
+        ax = axes[i]
+        
+        # Plot the filled contour (contourf) and contour lines
+        cf = ds.isel(valid_time=i).plot.contourf(ax=ax, transform=ccrs.PlateCarree(), levels=levels, cmap=cmap, add_colorbar=False, extend='max')
+        ds.isel(valid_time=i).plot.contour(ax=ax, transform=ccrs.PlateCarree(), levels=levels, colors='white', linewidths=0.5)
 
-    # Main cities to plot (add your own city coordinates)
-    cities = {
-        'Barcelona': (2.15899, 41.38879 ),
-        'Tarragona': (1.25, 41.11667),
-        'Lleida': (0.62218, 41.61674 ),
-        'Girona': (2.82493, 41.98311 )
-    }
+        # Add coastlines and borders
+        ax.coastlines()
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
 
-    # Plot
-    fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.PlateCarree()})
-    
-    latitudes = p_field['latitude'].values
-    longitudes = p_field['longitude'].values
+        # Add a title to each subplot for the respective hour
+        ax.set_title(f"+{i+1:03}")
 
-    contour = ax.contourf(longitudes, latitudes, p_field.values, levels=levels[:-1], colors=colors, transform=ccrs.PlateCarree(), extend='both')
-    # contour_lines = ax.contour(longitudes, latitudes, p_field.values, levels=levels, colors='black', linewidths=0.5, transform=ccrs.PlateCarree())
-    # norm = BoundaryNorm(boundaries=levels, ncolors=len(colors))
-    
-    # Add colorbar
-    cbar = plt.colorbar(contour, label='Precipitation (mm)', ax=ax, ticks=levels)
-    cbar.set_ticks(levels)
-    cbar.set_ticklabels([str(i) for i in levels])
-    cbar.ax.invert_yaxis()
+    # Add space between subplots
+    plt.tight_layout()
+    fig.suptitle(title, fontsize=15)
 
-    # Add labels and title
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    ax.set_title(f'Precipitation Field - {valid_time}')
+    # Add a single colorbar at the bottom of the figure
+    cbar_ax = fig.add_axes([0.2, 0.02, 0.6, 0.02])  # [left, bottom, width, height]
+    cbar = fig.colorbar(cf, cax=cbar_ax, orientation='horizontal', label='Total Precipitation (mm)')
 
-    # Add coastlines and borders
-    ax.coastlines(resolution='10m', color='black', linewidth=1)
-    ax.add_feature(cfeature.BORDERS, linestyle='-', linewidth=1)
-
-    # Plot the cities
-    for city, (lon, lat) in cities.items():
-        ax.scatter(lon, lat, edgecolor='black', facecolor = 'none', s=30, marker='s', transform=ccrs.PlateCarree())  # Plot city location
-        ax.text(lon + 0.03, lat - 0.1, city, fontsize=10, transform=ccrs.PlateCarree())  # Add city name
-
-    # Save the plot
     plt.savefig(savepath)
-    plt.close()
-    # plt.show()
 
 # %% plot GPT fields
 import matplotlib.pyplot as plt
@@ -462,7 +453,7 @@ def compute_hourly_era5_ds(date, ds, ref_date):
             start_acc_time = valid_time - np.timedelta64(1, 'h')
             
             ds = xr.DataArray(
-                data=field,  # precip field
+                data=norm_field,  # precip field
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
@@ -476,13 +467,11 @@ def compute_hourly_era5_ds(date, ds, ref_date):
             ds.attrs.update(field_ds.attrs) # Add attributes
             data_array_list.append(ds)
 
-
     analog_ds = xr.concat(data_array_list, dim='valid_time')
     analog_ds.attrs.update(field_ds.attrs)
     analog_ds.attrs['units'] = 'mm'  # Add new attribute for units
 
     return analog_ds
-
 
 def normalize_field(field, an_date, ref_date):
     """
@@ -511,5 +500,5 @@ def normalize_field(field, an_date, ref_date):
     ref_sd = ds['std_field'].sel(day_of_year=n_day, method='nearest').values
     norm_field = ref_sd * ((field - an_av) / an_sd) + ref_av
     norm_field[norm_field < 0] = 0
-    return norm_field
 
+    return norm_field

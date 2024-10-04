@@ -104,7 +104,7 @@ def gfs_module(date, syn_coords, mes_coords):
         - mes_coords: coordinate of the mesoscale domain to extract the precipitation field
     
     OUTPUT: all saved in the folder "output/yyyymmdd/"
-        - gfs_forecasted_p_field_0_24h.nc -> NetCDF file with the precipitation field forecasted by GFS
+        - gfs_forecast.nc -> NetCDF file with the precipitation field forecasted by GFS
         - 24h_precip_field_GFS.png -> Map of the forecasted precipitation field
     """
     # %% 1. Download GFS files
@@ -169,7 +169,7 @@ def gfs_module(date, syn_coords, mes_coords):
     print(f'Z1000: {z1000_wt}')
 
     # %% 4. Build and save GFS forecasted +24h precipitation field, with hourly step of accumulation
-    from functions import plot_p_field
+    from functions import plot_precip_field
 
     data_array_list = []
     init_time = datetime.combine(date.date(), time(0, 0)) 
@@ -182,11 +182,9 @@ def gfs_module(date, syn_coords, mes_coords):
 
         p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(mes_coords[2], mes_coords[3]))
         
-        # plot_p_field(p_field, valid_time, savepath = f'output/{date_str}/{valid_time}.png') # plot precipitation field
         # Extract times
         time = p_field.time.values
         valid_time = p_field.valid_time.values
-        step = p_field.step.values
         
         # Compute hourly precipitation field:
         if i in[1, 7, 13, 19]:
@@ -212,13 +210,18 @@ def gfs_module(date, syn_coords, mes_coords):
 
         p_field_previous = p_field.values # Save the precipitation field to compute hourly field for the next step
         start_acc_time =  p_field.valid_time.values # Save time for the next step
-    gfs_ds = xr.concat(data_array_list, dim='time')
+    gfs_ds = xr.concat(data_array_list, dim='valid_time')
     gfs_ds.attrs.update(ds_precip.attrs)
 
     # Save p_field as netcdf file
-    output_fp = f'output/{date_str}/gfs_forecasted_p_field_0_24h.nc'
+    output_fp = f'output/{date_str}/gfs_forecast.nc'
     gfs_ds.to_netcdf(output_fp)
 
+    # Plot precipitation field of GFS forecast
+    p_fold = f'output/{date_str}/precip_field_plot'
+    os.makedirs(p_fold, exist_ok=True)
+
+    plot_precip_field(gfs_ds, savepath = f'{p_fold}/gfs.png', title = 'GFS forecast') # plot precipitation field
 
     # %% Return Z500, Z100, WTs
     return z500, z1000, z500_wt, z1000_wt
@@ -341,9 +344,10 @@ def an_precipitation_module(today, an_datelist):
     import xarray as xr
     import os
     import numpy as np
-    from functions import plot_p_field, compute_hourly_era5_ds
+    from functions import plot_precip_field, compute_hourly_era5_ds
 
     ref_date = pd.to_datetime(today) # trasform today in date format (ref_date)
+    date_str = ref_date.strftime('%Y%m%d')
     idx = 0
     for an_date in tqdm(an_datelist, total=len(an_datelist), desc = 'Saving analog precipitation fields', leave = False):
         idx+=1
@@ -354,9 +358,15 @@ def an_precipitation_module(today, an_datelist):
             analog_ds = compute_hourly_era5_ds(an_date, ds, ref_date)
 
             # Save as NetCDF file
-            folder = f"output/{ref_date.strftime('%Y%m%d')}/analog_nc"
+            folder = f"output/{date_str}/analog_nc"
             os.makedirs(folder, exist_ok = True)  # Specify your output file path
             analog_ds.to_netcdf(f'{folder}/Analog_{idx}.nc')
+
+            # Plot precipitation fields for each analog
+            p_fold = f'output/{date_str}/precip_field_plot'
+            os.makedirs(p_fold, exist_ok=True)
+
+            plot_precip_field(analog_ds, savepath = f'{p_fold}/analog_{idx}.png', title = f'Analog {idx} - {an_date.date()}') # plot precipitation field
 
 
 if __name__ == '__main__':
