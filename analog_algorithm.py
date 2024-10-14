@@ -51,13 +51,15 @@ def main():
     era5_download = False  # True
 
     ############# Compute WTs from ERA5 data ##############
-    """ !!! WARNING: Set to True only if you have not computed ERA5 WTs yet, 
-            i.e. if you do not have the file 'era5_classification.csv' in the 'input/' folder !!! """
+    """ Set to True only if you have not computed ERA5 WTs yet, 
+            i.e. if you do not have the file 'era5_classification.csv' in the 'input/' folder
+            !!! WARNING: every time you change the spatial domain definition WTs must be computed again !!! """
     era5_wts = False # True
 
     ############# Compute Seasonal Precipitation Standardization Statistics (SPSS) ##############
-    """ !!! WARNING: Set to True only if you have not computed SPSS yet, 
-            i.e. if you do not have the file 'seasonal_precipitation_statistics.nc' in the 'input/' folder !!! """
+    """ Set to True only if you have not computed SPSS yet, 
+            i.e. if you do not have the file 'seasonal_precipitation_statistics.nc' in the 'input/' folder 
+            !!! WARNING:  every time you change the spatial domain definition WTs must be computed again !!! """
     seasonal_standardization = False # True
     
 ##########################################################################################################################

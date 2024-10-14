@@ -91,17 +91,28 @@ The script allows you to define the date for which the analysis will be performe
 The script will automatically create an output folder for the results, named after the target date (e.g., `output/20231003` for October 3rd, 2024).
 
 ### 2. Definition of the Spatial Domain
-You need to define two spatial domains:
+The algorithm is based on two spatial domains, one at synoptic level, to evaluate analogs from geopotential fields, and the second one at mesoscale domain, to evaluate and extract precipitation fieldsYou need to define two spatial domains:
 - **Synoptic Domain:** This is the larger domain used to evaluate the geopotential (GPT) fields for analog selection on a synoptic scale. The latitude and longitude bounds are set manually within the script. By default they are set for the **Western Mediterranean Region (D09)** ([Philipp et al., 2010](#philipp2010))
  
-- **Mesoscale Domain:** This smaller domain is used for evaluating precipitation fields at mesoscale level. It is specific to the region of interest. By default is set up for Catalonia region (coords = [lon(0, 3.5); lat(40, 43)]).
+- **Mesoscale Domain:** This smaller domain is used for evaluating and extracting in NetCDF format the precipitation fields at mesoscale level. It is specific to the region of interest. By default is set up for Catalonia region (coords = [lon(0, 3.5); lat(40, 43)]).
 
-### 3. Download ERA5 Reanalysis Data
+### 3. Flag for ERA5 Reanalysis Data downloading
 
 The algorithm can automatically download ERA5 reanalysis data for the defined spatial domains. By default, this is set to False to avoid unnecessary downloads, as this step can be time- and memory-intensive. You can change the era5_download variable to True to enable the download.
 To download ERA5 data, the script relies on the Copernicus Climate Data Store (CDS) API, which requires that you have the API key properly configured. (See the ERA5 API Setup section for details).
 
 ERA5 API uses for download the same coordinates specified in the previous section of the setup (Synoptic domains for GPTs and mesosclae domains for precipitation). Remember to download again reanalysis data in case of change coordinates setup, by imposing **era5_download=True**
+
+### 4. Flag for Weather Types (WTs) computation
+If it set equal to **True** the algorithm computes the WTs table from the ERA5 geopotential data using the synoptic spatial domain and saves it in the file *input/era5_classification.csv'*
+
+**! WARNING**: every time you change the spatial domain definition WTs must be computed again **!**
+
+### 5. Flag for Seasonal Precipitation Standardization Statistics (SPSS) computation
+If it is set equal to **True** the algorithm computes the NetCDF file used to compute the seasonal standardization in the analog method and saves it in the file *input/seasonal_precipitation_statistics.nc'*
+
+**! WARNING**:  every time you change the spatial domain definition WTs must be computed again **!** """
+
 
 ### Example of default setup of the algorithm
 
@@ -117,6 +128,11 @@ ERA5 API uses for download the same coordinates specified in the previous sectio
     syn_lon_e = 9
 
     # Mesoscale domain: to extract precipitation field
+    """
+    - cat = (40, 43, 0, 3.5)
+    - arga = (42.25, 43.25, -2.75, -0.75)
+    - d09 (Weastern Europe) = (31, 48, -17, 9)
+    """
     mes_lat_s = 40
     mes_lat_n = 43
     mes_lon_w = 0
@@ -124,6 +140,13 @@ ERA5 API uses for download the same coordinates specified in the previous sectio
 
     ############# Download of ERA5 reanalysis fields ##############
     era5_download = False  # True
+
+    ############# Compute WTs from ERA5 data ##############
+    era5_wts = False # True
+
+    ############# Compute Seasonal Precipitation Standardization Statistics (SPSS) ##############
+    seasonal_standardization = False # True
+    
 ```
 
 ## Usage:
@@ -139,25 +162,32 @@ Make sure the necessary input files (e.g., ERA5 datasets and classification CSVs
 ## Overview:
 The **Analog algorithm**, contained in the script *analog_algorithm.py* is divided into 4 modules, that are called individually from the *main()* function. Here the 4 modules are presented briefly:
 
-1. **Download of ERA5 data**
+1. **Download of ERA5 data**:
     Call to the Copernicus ERA5 API to download reanalysis data:
     - 500 and 1000 hPa geopotential (GPT) height databases (saved in the folder *'input/ERA5_gpt_ds'*)
     - Hourly cumulated precipitation databases by year, from 1940 to 2023 (saved in the folder *'input/ERA5_precip_ds'*)
 
     **!** **WARNING**: this module is run only when the variable **era5_download** is set equal to **True** in the Setup section of the *main()* function. The download of reanalysis data required large amount of time and memory space, so set the variable equal to True only if you need to download reanalysis data **!**
 
-2. **GFS Module**:
+2. **Compute WTs**:
+    Computation of WTs for all the ERA5 Reanalysis data for the period 1940-2023, at 500 hPa and 1000 hPa Geopotential Height using Beck method (Beck, 2000). The results are saved in the file *input/era5_classification.csv* and used later on in the algorithm
+
+3. **Compute SPSS**:
+    Computation of the database containing the average and standard deviation hourly field of precipitation for the 365 days of the year computed using 33 years of ERA5 precipitation data (1990-2023).
+    Results are saved in the NetCDF file: *input/seasonal_precipitation_statistics.nc*
+
+4. **GFS Module**:
     - Downloads the most recent 00 UTC run of GFS forecast files for *today* (day of algorithm run)
     - Extracts GPT fields at 500 hPa (Z500) and 1000 hPa (Z1000)
     - Computes weather types (WTs) based on GPT fields
     - Saves the hourly precipitation field forecasted by GFS from +001h to +024h valid_time as NetCDF files in the file *'output/yyyymmdd/gfs_forecast.nc'*, where yyyymmdd is the target date analyzed
 
-3. **Analogs Computation Module**:
+5. **Analogs Computation Module**:
     - Identifies and ranks analogs comparing GPT fields forecasted by GFS at 500 and 1000 hPa with ERA5 reanalysis GPT fields, for historical days with the same WTs of the target day
     - Computes a score for each potential analog day and ranks the top 10 based on these scores.
     - Saves the ranked analog days in a CSV file and plots their respective geopotential fields in the folder *'output/yyyymmdd/analog_gpt_field*.
 
-4. **Analog Precipitation Module**:
+6. **Analog Precipitation Module**:
     - For the 10 best analogs, the hourly precipitation fields are retrieved from the ERA5 dataset for a +24h time range
     - These fields are seasonally standardized (normalized) and saved as NetCDF files in the folder *'output/yyyymmdd/analog_nc*.
 
@@ -168,10 +198,10 @@ All the addtional functions needed to run the algorithm are contained in the scr
 ### *input/*
 After the clone of the repository from GitHub the input folder will contain:
 - *era5_classification.csv*: csv file which contains the classification of the Weather Types for each day from *1940-01-01* to *2023-12-31*, computed using **Beck** WTs classifiation method ([Beck, 2000](#Beck2000))
-- *seasonal_precip_standardization.nc*: NetCDF file contains the mean and standard deviation values of the precipitation fields for the dafault setting of the algorithm (synoptic scale: **D09**, mesoscale: **Catalonia**) to compute **seasonal standardization** of the analog's precipitation fields
+- *seasonal_precipitation_statistics.nc*: NetCDF file contains the mean and standard deviation values of the precipitation fields for the dafault setting of the algorithm (synoptic scale: **D09**, mesoscale: **Catalonia**) to compute **seasonal standardization** of the analog's precipitation fields
 After the download of ERA5 reanalysis data the following folders will be add to the *input/* folder:
 - *ERA5_gpt_ds*: containing the GPT fields at the specified pressure levels (default 500 and 1000) for the *synoptic domain* specified in the settings
-- *ERA5_precip_ds*: containing precipitation fields databases, year by year, for the *mesoscale domain* specified in the settings
+- *ERA5_precip_ds*: containing precipitation fields databases, year by year, for the *synoptic domain* specified in the settings. 
 
 ### *output/*
 It contains a folder for each day for which the algorithm has been run in the format *yyyymmdd* (e.g. *20241004/*). Each day folder contains the following items:
