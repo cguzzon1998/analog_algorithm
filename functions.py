@@ -86,7 +86,7 @@ def download_era5_precip(coords):
                       (eg: for Catalonia region -> coords = [43, 0, 40, 3.5] )
         OUTPUT: ds of the requested precipitation data saved in the folder precip_fold"""
     
-    precip_fold = 'test/ERA5_precip_ds'
+    precip_fold = 'input/ERA5_precip_ds'
     os.makedirs(precip_fold, exist_ok=True)
 
     for y in tqdm(range(1940, 2024), desc = 'Downloading ERA5 precipitation reanalysis data', leave = False):
@@ -132,6 +132,156 @@ def download_era5_precip(coords):
 
         client = cdsapi.Client()
         client.retrieve(dataset, request).download(f'{precip_fold}/{y}_ds.grib')
+
+
+# %% Compute WTs from ERA5 data (1940-2023)
+from tqdm import tqdm
+import pandas as pd
+import xarray as xr
+
+def compute_era5_wts():
+    """ Function to compute WTs for each day of the ERA5 database, going from 1940 to 2023, using Beck method (Beck, 2000)
+    
+    OUTPUT: WTs classification is saved in a csv file in the path 'input/test_era5_classification.csv'"""
+    fp_500 = 'input/ERA5_gpt_ds/geopotential_data_500.grib'
+    fp_1000 = 'input/ERA5_gpt_ds/geopotential_data_1000.grib'
+    ds_500 = xr.open_dataset(fp_500, engine='cfgrib')
+    ds_1000 = xr.open_dataset(fp_1000, engine='cfgrib')
+
+    wt_table = []
+
+    for time in tqdm(ds_500.time, desc = 'Compute ERA5 WTs (1940-2023)', leave = False):
+        # Extract geopotential fields at 500 and 1000 hPa
+        field_500 = ds_500.sel(time=time)['z'].values
+        field_1000 = ds_1000.sel(time=time)['z'].values
+
+        # Define WT with Beck classification
+        wt_500 = compute_wt(field_500)
+        wt_1000 = compute_wt(field_1000)
+        
+        wt_table.append([time.values, wt_500, wt_1000])
+
+    df = pd.DataFrame(wt_table, columns=["Date", "wt_500", "wt_1000"])
+    df.to_csv("input/era5_classification.csv", index=False)
+
+
+# %% Compute Seasonal Precipitation Standardization Statistics (SPSS)
+from tqdm import tqdm
+from datetime import datetime, timedelta
+
+def compute_p_field(date, ds):
+    """Compute mean hourly precipitation field """
+    start_date = date - pd.Timedelta(days=1)
+    end_date = date + pd.Timedelta(days=1)
+    ds_cat = ds.sel(time=slice(start_date, end_date))
+    tot_precip = 0
+    for day in range(1, ds_cat.sizes['time']):
+        for tstep in range(0, ds_cat.sizes['step']):
+            if (day == 1 and tstep in [0,1,2,3,4,5]) or (day == ds_cat.sizes['time']-1 and tstep in [6,7,8,9,10,11]):
+                continue
+            field = ds_cat.isel(time=day).isel(step=tstep).tp.values
+            tot_precip += field * 1000  # mm
+            tot_precip = tot_precip/24 # Divide by 24h to get mean hourly values of precipitation
+    return tot_precip
+
+def day_of_year_to_date(day_of_y):
+    """Compute day and month starting from the date of the year number (from 1 to 365)"""
+    days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if day_of_y < 1 or day_of_y > 365:
+        raise ValueError("Day of the year must be included between 1 and 365")
+    month = 1
+    while day_of_y > days_in_month[month - 1]:
+        day_of_y -= days_in_month[month - 1]
+        month += 1
+    day = day_of_y
+    return day, month
+
+def compute_spss(coords):
+    """Function to compute Seasonal Precipitation Standardization Statistics (SPSS):
+        - thr to compute mean and std is set equal to 1 mm
+        - mean and std are computed over a period that spans from 1990 to 2023
+        
+        OUTPUT: NetCDF file saved with the path: 'input/seasonal_precip_standardization.nc'
+    """
+    thr = 1/24 # Set the threshold of precipitation
+
+    # Define the range of years
+    start_year = 1990
+    end_year = 2023
+
+    # Create the xarray dataset
+    lon = np.arange(coords[2], coords[3]+0.25, 0.25)
+    lat = np.arange(coords[1], coords[0]+0.25, 0.25)
+
+    # Create an empty array to store the results
+    all_dates = pd.date_range(start=datetime(start_year, 1, 1), end=datetime(end_year, 12, 31))
+    daily_p_array = np.zeros((len(all_dates), len(lat), len(lon)))
+
+    idx = 0 # Initializate index
+    for year in tqdm(range(start_year, end_year+1), desc="Computing SPSS", leave = False):
+        filename = f'input/ERA5_precip_ds/{year}_ds.grib'
+        with xr.open_dataset(filename, engine='cfgrib') as ds:
+            start_date = datetime(year, 1, 1)
+            end_date = datetime(year, 12, 31)
+            date_list = pd.date_range(start=start_date, end=end_date).tolist()
+            
+            for date in tqdm(date_list, desc=f"Days {year}", leave=False):
+                daily_p = compute_p_field(date, ds)
+
+                daily_p = np.where(daily_p < thr, np.nan, daily_p) # Convert to Nan all the values lower than the threshold
+                daily_p_array[idx, :, :] = daily_p
+                idx += 1
+
+    daily_p_ds = xr.Dataset({"daily_p": (["time", "lat", "lon"], daily_p_array)},
+                             coords={"time": all_dates,'latitude' : lat,'longitude' : lon})
+
+    # Add attributes to the dataset
+    daily_p_ds.daily_p.attrs['units'] = 'mm'
+    daily_p_ds.daily_p.attrs['long_name'] = 'Daily total precipitation'
+    
+    # Initialize a list to store all dates
+    av_fields = []
+    std_fields = []
+
+    # Loop through all days of the year
+    for day_of_y in tqdm(range(1, 366), desc = 'Analyzing days of the year'):
+        day, month = day_of_year_to_date(day_of_y) # Compute day and month from day of the year (1-365)
+
+        # Compute datelist to compute daily SPSS (30 days mooving window)
+        datelist = []
+        for year in range(start_year, end_year + 1):
+            base_date = pd.to_datetime(f'{year}-{month}-{day}')
+            for offset in range(-15, 15):  # -15 to 15 days offset
+                date = base_date + timedelta(days=offset)
+                datelist.append(pd.to_datetime(date)) # Create datelist to compute precipitation statistics
+
+        # Create the array with the precipitation field to compute mean and sd
+        fields_array = []
+        for day in datelist:
+            fields_array.append(daily_p_ds.sel(time= day,method='nearest').daily_p.values)
+
+        # Compute mean and std field of precipitation
+        av =  np.nanmean(fields_array, axis=0)
+        std = np.nanstd(fields_array, axis=0)
+
+        av_fields.append(av)
+        std_fields.append(std)
+
+    # Create an xarray dataset with the results
+    ds = xr.Dataset(
+        {
+            'av_field': (('day_of_year', 'lat', 'lon'), np.array(av_fields)),
+            'std_field': (('day_of_year', 'lat', 'lon'), np.array(std_fields))
+        },
+        coords={
+            'day_of_year': np.arange(1, 366),
+            'latitude': daily_p_ds.lat,
+            'longitude': daily_p_ds.lon
+        }
+    )
+
+
+    ds.to_netcdf('input/seasonal_precipitation_statistics.nc') # Save the dataset to a NetCDF file
 
 
 # %% WTs computation
@@ -283,13 +433,6 @@ import cartopy.feature as cfeature
 from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
 from datetime import datetime
 
-import xarray as xr
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-import numpy as np
-import pdb
-
 def plot_precip_field(ds, savepath, title):
 
     # Number of hours (assuming 24 time steps)
@@ -424,7 +567,7 @@ def plot_gpt(field1, field2, lon, lat, title1, title2, vmin, vmax, savepath):
 
 
 # %% Computation of analog's precipitation fields
-def compute_hourly_era5_ds(date, ds, ref_date):
+def compute_hourly_era5_ds(date, ds, ref_date, coords):
     """
     Computation of the 24h cumulated precipitation field from ERA5 Reanalysis using 'date' as starting time
 
@@ -439,13 +582,15 @@ def compute_hourly_era5_ds(date, ds, ref_date):
     start_date = date - pd.Timedelta(days=1)
     end_date = date + pd.Timedelta(days=1)
 
-    ds_cat = ds.sel(time=slice(start_date, end_date))
+    ds = ds.sel(time=slice(start_date, end_date)) # Extract correct time
+    ds_domain = ds.sel(latitude=slice(coords[0], coords[1]), longitude=slice(coords[2], coords[3])) # Extract spatial domain
+
     data_array_list = []
-    for day in range(1, ds_cat.sizes['time']):
-        for tstep in range(0, ds_cat.sizes['step']):
-            if (day == 1 and tstep in [0, 1, 2, 3, 4, 5]) or (day == ds_cat.sizes['time']-1 and tstep in [6, 7, 8, 9, 10, 11]):  # Skip first values belonging to the day before
+    for day in range(1, ds_domain.sizes['time']):
+        for tstep in range(0, ds_domain.sizes['step']):
+            if (day == 1 and tstep in [0, 1, 2, 3, 4, 5]) or (day == ds_domain.sizes['time']-1 and tstep in [6, 7, 8, 9, 10, 11]):  # Skip first values belonging to the day before
                 continue
-            field_ds = ds_cat.isel(time=day).isel(step=tstep)
+            field_ds = ds_domain.isel(time=day).isel(step=tstep)
             field = field_ds.tp.values*1000 # transform in mm of rainfall
             norm_field = normalize_field(field, date, ref_date)
 
@@ -488,7 +633,7 @@ def normalize_field(field, an_date, ref_date):
                   standard deviation for the corresponding day of the year.
     """
     
-    ds = xr.open_dataset('input/seasonal_precip_standardization.nc')
+    ds = xr.open_dataset('input/seasonal_precipitation_statistics.nc')
     # Analog day
     n_day = (an_date - pd.Timestamp(an_date.year, 1, 1)).days + 1
     an_av = ds['av_field'].sel(day_of_year=n_day, method='nearest').values
@@ -502,3 +647,24 @@ def normalize_field(field, an_date, ref_date):
     norm_field[norm_field < 0] = 0
 
     return norm_field
+
+
+# %% Mooving Window module
+def is_within_window(candidate_date, ref_date):
+    candidate_month_day = (candidate_date.month, candidate_date.day)
+    
+    # Convert to day of the year for easier comparison
+    ref_day_of_year = ref_date.timetuple().tm_yday
+    candidate_day_of_year = candidate_date.timetuple().tm_yday
+
+    # Calculate days between 2 months before and 2 months after
+    # Handle the year boundaries (e.g., December to January)
+    start_window = (ref_day_of_year - 61) % 365
+    end_window = (ref_day_of_year + 61) % 365
+    
+    if start_window <= end_window:
+        # Simple case: the window is within the same year
+        return start_window <= candidate_day_of_year <= end_window
+    else:
+        # Window spans across the end of the year (e.g., November to February)
+        return candidate_day_of_year >= start_window or candidate_day_of_year <= end_window

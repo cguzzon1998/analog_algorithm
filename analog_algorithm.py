@@ -4,7 +4,7 @@ def main():
     import os
     import shutil
     import pandas as pd
-    from functions import download_era5_gpt, download_era5_precip
+    from functions import download_era5_gpt, download_era5_precip, compute_era5_wts, compute_spss
     
     ##########################################################################################################################
     """ Setting of the function:
@@ -16,10 +16,9 @@ def main():
                 - era5_download = true : run of the ERA5 api to download geopotential fields and precipitation fields
                                          for the synoptic and the mesoscale domain respectively
                 - era5_download = false : no download"""
-            
-
+    
     ############### Definition of the target date ################
-    today = datetime.today() # Get today's date
+    today = datetime.today() - timedelta(days=2)# Get today's date
     date_str = today.strftime('%Y%m%d')
     out_folder = f'output/{date_str}' # Create the output folder
     os.makedirs(out_folder, exist_ok=True)
@@ -34,52 +33,80 @@ def main():
     syn_coords = [syn_lat_n, syn_lat_s, syn_lon_w, syn_lon_e]
 
     # Mesoscale domain: to extract precipitation field
-    mes_lat_s = 40
-    mes_lat_n = 43
-    mes_lon_w = 0
+    """
+    - cat = (40, 43, 0, 3.5)
+    - arga = (42.25, 43.25, -2.75, -0.75)
+    - d09 (Weastern Europe) = (31, 48, -17, 9)
+    """
+    mes_lat_s = 40 
+    mes_lat_n = 43 
+    mes_lon_w = 0 
     mes_lon_e = 3.5
     mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
 
 
     ############# Download of ERA5 reanalysis fields ##############
     """ !!! WARNING: Set to True only if you have not downloaded ERA5 data yet, 
-        the download requied large amount of time and memory space !!! """
+            the download requied large amount of time and memory space !!! """
     era5_download = False  # True
+
+    ############# Compute WTs from ERA5 data ##############
+    """ !!! WARNING: Set to True only if you have not computed ERA5 WTs yet, 
+            i.e. if you do not have the file 'era5_classification.csv' in the 'input/' folder !!! """
+    era5_wts = False # True
+
+    ############# Compute Seasonal Precipitation Standardization Statistics (SPSS) ##############
+    """ !!! WARNING: Set to True only if you have not computed SPSS yet, 
+            i.e. if you do not have the file 'seasonal_precipitation_statistics.nc' in the 'input/' folder !!! """
+    seasonal_standardization = False # True
     
 ##########################################################################################################################
 
 # %% Analog Algorithm
     """ Running of the modules of the Analog Algorithm
         1. Download of ERA5 reanalysis data: only if era5_download set to True
-        2. GFS Module: extraction of GPT fields from GFS forecast for the target day;
+        2. Compute Weather Types (WTs) for each day from ERA5 Reanalysis data for the whole period 1940-2023
+            and save them the csv file era5_classificatiion.csv' in the 'input/' folder
+        3. Compute Seasonal Precipitation Standardization Statistics (SPSS) and save the data in the database 
+            'seasonal_precip_standardization.nc' in the 'input/' folder
+        4. GFS Module: extraction of GPT fields from GFS forecast for the target day;
            Save the predicted 24h cumulated precipitation field
-        3. Analog Module: computation of the best 10 analogs
-        4. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs"""
-    
+        5. Analog Module: computation of the best 10 analogs
+        6. Analog Precipitation Module: save the 24h cumulated precipitation fields for the best 10 analogs
+        7. Delate GFS files of the target day (today)"""
+        
     # 1. Downaload of ERA5 Reanalysis fields
     if era5_download == True:
         print('Downloading ERA5 reanalysis data:')
         download_era5_gpt(level = "500", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 500 hPa gpt ds
         download_era5_gpt(level = "1000", coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download 1000 hPa gpt ds
-        download_era5_precip(coords=[mes_lat_n,mes_lon_w,mes_lat_s,mes_lon_e]) # Download precipitation ds
+        download_era5_precip(coords=[syn_lat_n,syn_lon_w,syn_lat_s,syn_lon_e]) # Download precipitation ds
         print('\n')
 
-    # 2. Call GFS Module
+    # 2. Compute WTs from ERA5 data
+    if era5_wts == True:
+        compute_era5_wts()
+
+    # 3. Compute SSPS
+    if seasonal_standardization == True:
+        compute_spss(mes_coords)
+
+    # 4. Call GFS Module
     print('Running GFS Module:')
     z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords)
     print('\n')
 
-    # 3. Call Analog Computation Module
+    # 5. Call Analog Computation Module
     print('Running Analog Module:')
     analog_table = analogs_module(today, z500, z1000, z500_wt, z1000_wt)
     print('\n')
 
-    # 4. Call Analog Precipitation Module
+    # 6. Call Analog Precipitation Module
     print('Running Analog Precipitation Module:')
-    an_precipitation_module(today, analog_table['Date'])
+    an_precipitation_module(today, analog_table['Date'], mes_coords)
     print('\n')
 
-    # Delate GFS forecast
+    # 7. Delate GFS forecast
     path = 'input/gfs_files'
     try:
         shutil.rmtree(path)
@@ -180,8 +207,20 @@ def gfs_module(date, syn_coords, mes_coords):
         ds_precip = xr.open_dataset(f'{path}/gfs.t00z.pgrb2.0p25.f{i:03}', engine='cfgrib', 
                                     filter_by_keys={'stepType': 'accum', 'typeOfLevel': 'surface'})['tp']
 
-        p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(mes_coords[2], mes_coords[3]))
-        
+        if mes_coords[2] < 0 and mes_coords[3] < 0:
+            lon_w = 360 + mes_coords[2]
+            lon_e = 360 + mes_coords[3]
+            p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(lon_w, lon_e))
+
+        elif mes_coords[2] < 0 and mes_coords[3] > 0:
+            lon_w = 360 + mes_coords[2]
+            p1 = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(lon_w, 360))
+            p2 = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(0, mes_coords[3]))
+            p_field = xr.concat([p1, p2], dim='longitude')
+
+        else:
+            p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(mes_coords[2], mes_coords[3]))
+
         # Extract times
         time = p_field.time.values
         valid_time = p_field.valid_time.values
@@ -251,6 +290,8 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     # a: Read WTs classification of ERA5 Reanalysis and subsets analogs candidates based on WTs
     import pandas as pd
     import os
+    from datetime import timedelta, datetime
+    from functions import is_within_window
 
     filepath = 'input/era5_classification.csv'
     era5_wt = pd.read_csv(filepath, na_filter=False)
@@ -258,6 +299,9 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     # Exclude analog belonging to the same year of the reference date
     ref_year = ref_date.year
     analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year]
+
+    # Mooving window module
+    # analog_datelist = [date for date in analog_datelist if is_within_window(pd.to_datetime(date), ref_date)]
 
     # b: Analog's ranking
     from tqdm import tqdm
@@ -323,7 +367,7 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     return top_analogs
 
 # 4. Analog Precipitation Module
-def an_precipitation_module(today, an_datelist):
+def an_precipitation_module(today, an_datelist, coords):
     """
     Processes analog precipitation data for specified dates, computes total precipitation,
     normalizes the field, and saves the results as NetCDF files. Additionally, it plots
@@ -355,7 +399,7 @@ def an_precipitation_module(today, an_datelist):
         year = an_date.year # Extract year of the analog date
         filepath = f'input/ERA5_precip_ds/{year}_ds.grib'
         with xr.open_dataset(filepath, engine='cfgrib') as ds:
-            analog_ds = compute_hourly_era5_ds(an_date, ds, ref_date)
+            analog_ds = compute_hourly_era5_ds(an_date, ds, ref_date, coords)
 
             # Save as NetCDF file
             folder = f"output/{date_str}/analog_nc"
