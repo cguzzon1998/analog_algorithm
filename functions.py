@@ -89,7 +89,7 @@ def download_era5_precip(coords):
     precip_fold = 'input/ERA5_precip_ds'
     os.makedirs(precip_fold, exist_ok=True)
 
-    for y in tqdm(range(1940, 2024), desc = 'Downloading ERA5 precipitation reanalysis data', leave = False):
+    for y in tqdm(range(1961, 2024), desc = 'Downloading ERA5 precipitation reanalysis data', leave = False):
 
         dataset = "reanalysis-era5-single-levels"
         request = {
@@ -569,52 +569,94 @@ def plot_gpt(field1, field2, lon, lat, title1, title2, vmin, vmax, savepath):
 # %% Computation of analog's precipitation fields
 def compute_hourly_era5_ds(date, ds, ref_date, coords):
     """
-    Computation of the 24h cumulated precipitation field from ERA5 Reanalysis using 'date' as starting time
+    Computation of the 24h cumulated precipitation field from ERA5 Reanalysis using 'date' as starting time.
 
     INPUT:
     - date: pandas.Timestamp, the starting day for the calculation.
-    - ds: xarray.Dataset, dataset containing precipitation data 
+    - ds: xarray.Dataset, dataset containing precipitation data.
+    - ref_date: pandas.Timestamp, reference date for prediction time (e.g., the analysis starting point).
+    - coords: list, [lat_min, lat_max, lon_min, lon_max] to define the spatial domain.
 
     OUTPUT:
-    - tot_precip: float, total 24 cumulated precipitation field calculated in millimeters (mm).
+    - tot_precip: xarray.Dataset, dataset with cumulative precipitation and time variables (prediction_time, analog_date).
     """
-
     start_date = date - pd.Timedelta(days=1)
     end_date = date + pd.Timedelta(days=1)
 
-    ds = ds.sel(time=slice(start_date, end_date)) # Extract correct time
-    ds_domain = ds.sel(latitude=slice(coords[0], coords[1]), longitude=slice(coords[2], coords[3])) # Extract spatial domain
+    # Select temporal and spatial data
+    ds = ds.sel(time=slice(start_date, end_date))
+    ds_domain = ds.sel(latitude=slice(coords[0], coords[1]), longitude=slice(coords[2], coords[3]))
 
     data_array_list = []
+    prediction_time_seconds = ref_date.timestamp() + 3600 # Epoch time in seconds
+    step_size = 3600
+
     for day in range(1, ds_domain.sizes['time']):
         for tstep in range(0, ds_domain.sizes['step']):
-            if (day == 1 and tstep in [0, 1, 2, 3, 4, 5]) or (day == ds_domain.sizes['time']-1 and tstep in [6, 7, 8, 9, 10, 11]):  # Skip first values belonging to the day before
+            if (day == 1 and tstep in [0, 1, 2, 3, 4, 5]) or (day == ds_domain.sizes['time'] - 1 and tstep in [6, 7, 8, 9, 10, 11]):
                 continue
-            field_ds = ds_domain.isel(time=day).isel(step=tstep)
-            field = field_ds.tp.values*1000 # transform in mm of rainfall
-            norm_field = normalize_field(field, date, ref_date)
-
-            valid_time = field_ds.valid_time.values
-            start_acc_time = valid_time - np.timedelta64(1, 'h')
             
-            ds = xr.DataArray(
-                data=norm_field,  # precip field
+            field_ds = ds_domain.isel(time=day).isel(step=tstep)
+            field = field_ds.tp.values * 1000  # Convert to mm of rainfall
+            norm_field = normalize_field(field, date, ref_date) # SPSS routine
+
+            # Create the prediction_time variable (Epoch time)
+            prediction_time = np.int32(prediction_time_seconds)
+            prediction_time_seconds += step_size  # Increment by one hour (3600 seconds)
+
+            # Create the analog_date variable, which is simply the `date` variable
+            analog_date = date
+
+            # Create the new DataArray with the new time variables
+            ds_new = xr.DataArray(
+                data=norm_field,
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
                     'longitude': field_ds.longitude.values,
-                    'an_day': date,  
-                    'valid_time': valid_time,
-                    'start_acc_time': start_acc_time,
+                    'valid_time': prediction_time,
+                    'analog_date': analog_date
                 },
-                name = 'tp'
+                name='tp'
             )
-            ds.attrs.update(field_ds.attrs) # Add attributes
-            data_array_list.append(ds)
 
+            # Add standard attributes
+            ds_new.attrs.update(field_ds.attrs)
+            ds_new.attrs['units'] = 'kg m-2'
+            ds_new.attrs['long_name'] = 'Total precipitation'
+            ds_new.attrs['standard_name'] = 'precipitation_amount'
+
+            data_array_list.append(ds_new)
+
+    # Final concatenation of the dataset
     analog_ds = xr.concat(data_array_list, dim='valid_time')
-    analog_ds.attrs.update(field_ds.attrs)
-    analog_ds.attrs['units'] = 'mm'  # Add new attribute for units
+
+    # Add global attributes
+    analog_ds.attrs.update({
+        'title': 'ERA5 hourly Cumulative Precipitation Data',
+        'history': f'Created on {pd.Timestamp.now()} from ERA5 Reanalysis data',
+        'Conventions': 'CF-1.7',
+        'institution': 'Universitat de Barcelona, GAMA team',
+        'source': 'ERA5 Reanalysis',
+        'references': 'https://climate.copernicus.eu/climate-reanalysis'
+    })
+
+    # Fix units and add other attributes for coordinates
+    analog_ds.coords['longitude'].attrs['units'] = 'degrees_east'
+    analog_ds.coords['longitude'].attrs['long_name'] = 'Longitude'
+    analog_ds.coords['longitude'].attrs['standard_name'] = 'longitude'
+
+    analog_ds.coords['latitude'].attrs['units'] = 'degrees_north'
+    analog_ds.coords['latitude'].attrs['long_name'] = 'Latitude'
+    analog_ds.coords['latitude'].attrs['standard_name'] = 'latitude'
+
+    # Add attributes for the new time variables
+    analog_ds.coords['valid_time'].attrs['long_name'] = 'Prediction Time (seconds since 1970-01-01 00:00:00)'
+    analog_ds.coords['valid_time'].attrs['standard_name'] = 'time'
+    analog_ds.coords['valid_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
+
+    analog_ds.coords['analog_date'].attrs['long_name'] = 'Analog Date'
+    analog_ds.coords['analog_date'].attrs['standard_name'] = 'analog_date'
 
     return analog_ds
 

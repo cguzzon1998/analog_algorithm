@@ -18,7 +18,7 @@ def main():
                 - era5_download = false : no download"""
     
     ############### Definition of the target date ################
-    today = datetime.today() - timedelta(days=2)# Get today's date
+    today = datetime.today() # Get today's date
     date_str = today.strftime('%Y%m%d')
     out_folder = f'output/{date_str}' # Create the output folder
     os.makedirs(out_folder, exist_ok=True)
@@ -38,9 +38,9 @@ def main():
     - arga = (42.25, 43.25, -2.75, -0.75)
     - d09 (Weastern Europe) = (31, 48, -17, 9)
     """
-    mes_lat_s = 40 
+    mes_lat_s = 40
     mes_lat_n = 43 
-    mes_lon_w = 0 
+    mes_lon_w = 0
     mes_lon_e = 3.5
     mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
 
@@ -111,10 +111,10 @@ def main():
     # 7. Delate GFS forecast
     path = 'input/gfs_files'
     try:
-        shutil.rmtree(path)
-        print('GFS files correcly delated')
+       shutil.rmtree(path)
+       print('GFS files correcly delated')
     except OSError as e:
-        print(f'Error: {e}')
+       print(f'Error: {e}')
 
 
 """ Modules """
@@ -165,7 +165,6 @@ def gfs_module(date, syn_coords, mes_coords):
                 # Save the file in the 'input' directory
                 with open(os.path.join(path, file_name), 'wb') as f:
                     f.write(response.content)
-                print(f'Downloaded: {file_name}')
             else:
                 print(f'Failed to download: {file_name}, Status code: {response.status_code}')
 
@@ -199,10 +198,11 @@ def gfs_module(date, syn_coords, mes_coords):
 
     # %% 4. Build and save GFS forecasted +24h precipitation field, with hourly step of accumulation
     from functions import plot_precip_field
+    import pandas as pd
 
     data_array_list = []
-    init_time = datetime.combine(date.date(), time(0, 0)) 
-    start_acc_time = init_time # Initializate start accumulation time variable
+    init_time = datetime.combine(date.date(), time(0, 0))
+    init_time = np.int32(pd.to_datetime(init_time).timestamp())
 
     for i in tqdm(range(1,25), desc = 'Computing hourly GFS precipitation field', leave = False):
 
@@ -224,35 +224,65 @@ def gfs_module(date, syn_coords, mes_coords):
             p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(mes_coords[2], mes_coords[3]))
 
         # Extract times
-        time = p_field.time.values
-        valid_time = p_field.valid_time.values
-        
+        valid_time = pd.to_datetime(p_field.valid_time.values).timestamp()
+        valid_time = np.int32(valid_time)
+
         # Compute hourly precipitation field:
         if i in[1, 7, 13, 19]:
             hourly_field = p_field.values
         else: 
             hourly_field = p_field.values - p_field_previous
 
+        # Compute correct values of longitude to save into the gfs_ds
+        longitude = np.arange(mes_coords[2], mes_coords[3] + 0.25, 0.25)
         ds = xr.DataArray(
             data=hourly_field,  # precip field
             dims=['latitude', 'longitude'],
             coords={
                 'latitude': p_field.latitude.values, 
-                'longitude': p_field.longitude.values,  
-                'init_time': init_time,  
+                'longitude': longitude,  
                 'valid_time': valid_time,
-                'start_acc_time': start_acc_time
+                'initialization_time': init_time
 
             },
             name='tp'
         )
-        ds.attrs.update(ds_precip.attrs) # Add attributes
+        # ds.attrs.update(ds_precip.attrs) # Add attributes
+        ds.attrs['units'] = 'kg m-2'
+        ds.attrs['long_name'] = 'Total precipitation'
+        ds.attrs['standard_name'] = 'precipitation_amount'
         data_array_list.append(ds)
 
         p_field_previous = p_field.values # Save the precipitation field to compute hourly field for the next step
-        start_acc_time =  p_field.valid_time.values # Save time for the next step
+
     gfs_ds = xr.concat(data_array_list, dim='valid_time')
     gfs_ds.attrs.update(ds_precip.attrs)
+    gfs_ds.attrs.update({
+        'title': 'GFS hourly Cumulative Precipitation Data',
+        'history': f'Created on {pd.Timestamp.now()} from GFS data data',
+        'Conventions': 'CF-1.7',
+        'institution': 'Universitat de Barcelona, GAMA team',
+        'source': 'GFS (NOAA)',
+        'references': 'https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast'
+    })
+
+    # Fix units and add other attributes for coordinates
+    gfs_ds.coords['longitude'].attrs['units'] = 'degrees_east'
+    gfs_ds.coords['longitude'].attrs['long_name'] = 'Longitude'
+    gfs_ds.coords['longitude'].attrs['standard_name'] = 'longitude'
+
+    gfs_ds.coords['latitude'].attrs['units'] = 'degrees_north'
+    gfs_ds.coords['latitude'].attrs['long_name'] = 'Latitude'
+    gfs_ds.coords['latitude'].attrs['standard_name'] = 'latitude'
+
+    # Add attributes for the new time variables
+    gfs_ds.coords['valid_time'].attrs['long_name'] = 'Prediction Time (seconds since 1970-01-01 00:00:00)'
+    gfs_ds.coords['valid_time'].attrs['standard_name'] = 'time'
+    gfs_ds.coords['valid_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
+
+    gfs_ds.coords['initialization_time'].attrs['long_name'] = 'Initialization Time of GFS model'
+    gfs_ds.coords['initialization_time'].attrs['standard_name'] = 'initialization_time'
+    gfs_ds.coords['initialization_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
 
     # Save p_field as netcdf file
     output_fp = f'output/{date_str}/gfs_forecast.nc'
@@ -300,7 +330,10 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     analog_candidate = era5_wt.loc[(era5_wt['wt_500'] == z500_wt) & ((era5_wt['wt_1000'] == z1000_wt))]['Date'].tolist()
     # Exclude analog belonging to the same year of the reference date
     ref_year = ref_date.year
-    analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year]
+    # analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year]
+    analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year
+                    and 1940 <= pd.to_datetime(date).year <= 2023]
+
 
     # Mooving window module
     # analog_datelist = [date for date in analog_datelist if is_within_window(pd.to_datetime(date), ref_date)]
@@ -392,21 +425,21 @@ def an_precipitation_module(today, an_datelist, coords):
     import numpy as np
     from functions import plot_precip_field, compute_hourly_era5_ds
 
-    ref_date = pd.to_datetime(today) # trasform today in date format (ref_date)
+    ref_date = pd.to_datetime(today).normalize() # trasform today in date format (ref_date)
     date_str = ref_date.strftime('%Y%m%d')
     idx = 0
     for an_date in tqdm(an_datelist, total=len(an_datelist), desc = 'Saving analog precipitation fields', leave = False):
         idx+=1
         an_date = pd.to_datetime(an_date)
         year = an_date.year # Extract year of the analog date
-        filepath = f'input/ERA5_precip_ds/{year}_ds.grib'
+        filepath = f'input/cat_ERA5_precip_ds/{year}_ds.grib'
         with xr.open_dataset(filepath, engine='cfgrib') as ds:
             analog_ds = compute_hourly_era5_ds(an_date, ds, ref_date, coords)
 
             # Save as NetCDF file
             folder = f"output/{date_str}/analog_nc"
-            os.makedirs(folder, exist_ok = True)  # Specify your output file path
-            analog_ds.to_netcdf(f'{folder}/Analog_{idx}.nc')
+            os.makedirs(folder, exist_ok = True)
+            analog_ds.to_netcdf(f'{folder}/Analog_{idx}.nc', mode = 'w')
 
             # Plot precipitation fields for each analog
             p_fold = f'output/{date_str}/precip_field_plot'
