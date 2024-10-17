@@ -458,8 +458,8 @@ def plot_precip_field(ds, savepath, title):
         ax = axes[i]
         
         # Plot the filled contour (contourf) and contour lines
-        cf = ds.isel(valid_time=i).plot.contourf(ax=ax, transform=ccrs.PlateCarree(), levels=levels, cmap=cmap, add_colorbar=False, extend='max')
-        ds.isel(valid_time=i).plot.contour(ax=ax, transform=ccrs.PlateCarree(), levels=levels, colors='white', linewidths=0.5)
+        cf = ds['tp'].isel(valid_time=i).plot.contourf(ax=ax, transform=ccrs.PlateCarree(), levels=levels, cmap=cmap, add_colorbar=False, extend='max')
+        ds['tp'].isel(valid_time=i).plot.contour(ax=ax, transform=ccrs.PlateCarree(), levels=levels, colors='white', linewidths=0.5)
 
         # Add coastlines and borders
         ax.coastlines()
@@ -598,7 +598,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
             
             field_ds = ds_domain.isel(time=day).isel(step=tstep)
             field = field_ds.tp.values * 1000  # Convert to mm of rainfall
-            norm_field = normalize_field(field, date, ref_date) # SPSS routine
+            # norm_field = normalize_field(field, date, ref_date) # SPSS routine
 
             # Create the prediction_time variable (Epoch time)
             prediction_time = np.int32(prediction_time_seconds)
@@ -609,7 +609,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
 
             # Create the new DataArray with the new time variables
             ds_new = xr.DataArray(
-                data=norm_field,
+                data=field,
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
@@ -621,25 +621,25 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
             )
 
             # Add standard attributes
-            ds_new.attrs.update(field_ds.attrs)
             ds_new.attrs['units'] = 'kg m-2'
             ds_new.attrs['long_name'] = 'Total precipitation'
             ds_new.attrs['standard_name'] = 'precipitation_amount'
+            ds_new.attrs['GRIB_cfVarName'] = 'tp'
+            ds_new.attrs['GRIB_stepType'] = '1h-accum'
+            ds_new.attrs['GRIB_iDirectionIncrementInDegrees'] = '0.25'
 
             data_array_list.append(ds_new)
 
     # Final concatenation of the dataset
-    analog_ds = xr.concat(data_array_list, dim='valid_time')
+    analog_ds = xr.concat(data_array_list, dim='valid_time').to_dataset(name = 'tp')
 
     # Add global attributes
-    analog_ds.attrs.update({
-        'title': 'ERA5 hourly Cumulative Precipitation Data',
-        'history': f'Created on {pd.Timestamp.now()} from ERA5 Reanalysis data',
-        'Conventions': 'CF-1.7',
-        'institution': 'Universitat de Barcelona, GAMA team',
-        'source': 'ERA5 Reanalysis',
-        'references': 'https://climate.copernicus.eu/climate-reanalysis'
-    })
+    analog_ds.attrs['title'] = 'ERA5 hourly Cumulative Precipitation Data'
+    analog_ds.attrs['history'] = f'Created on {pd.Timestamp.now()} from ERA5 Reanalysis data',
+    analog_ds.attrs['Conventions'] = 'CF-1.7'
+    analog_ds.attrs['institution'] = 'Universitat de Barcelona, GAMA team'
+    analog_ds.attrs['source'] = 'ERA5 Reanalysis'
+    analog_ds.attrs['references'] = 'https://climate.copernicus.eu/climate-reanalysis'
 
     # Fix units and add other attributes for coordinates
     analog_ds.coords['longitude'].attrs['units'] = 'degrees_east'
@@ -656,7 +656,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
     analog_ds.coords['valid_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
 
     analog_ds.coords['analog_date'].attrs['long_name'] = 'Analog Date'
-    analog_ds.coords['analog_date'].attrs['standard_name'] = 'analog_date'
+    analog_ds.coords['analog_date'].attrs['standard_name'] = 'time'
 
     return analog_ds
 

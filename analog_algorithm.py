@@ -20,7 +20,7 @@ def main():
     ############### Definition of the target date ################
     today = datetime.today() # Get today's date
     date_str = today.strftime('%Y%m%d')
-    out_folder = f'output/{date_str}' # Create the output folder
+    out_folder = f'output/arga_{date_str}' # Create the output folder
     os.makedirs(out_folder, exist_ok=True)
     
     
@@ -38,10 +38,10 @@ def main():
     - arga = (42.25, 43.25, -2.75, -0.75)
     - d09 (Weastern Europe) = (31, 48, -17, 9)
     """
-    mes_lat_s = 40
-    mes_lat_n = 43 
-    mes_lon_w = 0
-    mes_lon_e = 3.5
+    mes_lat_s = 42.25
+    mes_lat_n = 43.25
+    mes_lon_w = -2.75
+    mes_lon_e = -0.75
     mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
 
 
@@ -95,31 +95,31 @@ def main():
 
     # 4. Call GFS Module
     print('Running GFS Module:')
-    z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords)
+    z500, z1000, z500_wt, z1000_wt = gfs_module(today, syn_coords, mes_coords, out_folder)
     print('\n')
 
     # 5. Call Analog Computation Module
     print('Running Analog Module:')
-    analog_table = analogs_module(today, z500, z1000, z500_wt, z1000_wt)
+    analog_table = analogs_module(today, z500, z1000, z500_wt, z1000_wt, out_folder)
     print('\n')
 
     # 6. Call Analog Precipitation Module
     print('Running Analog Precipitation Module:')
-    an_precipitation_module(today, analog_table['Date'], mes_coords)
+    an_precipitation_module(today, analog_table['Date'], mes_coords, out_folder)
     print('\n')
 
-    # 7. Delate GFS forecast
-    path = 'input/gfs_files'
-    try:
-       shutil.rmtree(path)
-       print('GFS files correcly delated')
-    except OSError as e:
-       print(f'Error: {e}')
+    # # 7. Delate GFS forecast
+    # path = 'input/gfs_files'
+    # try:
+    #    shutil.rmtree(path)
+    #    print('GFS files correcly delated')
+    # except OSError as e:
+    #    print(f'Error: {e}')
 
 
 """ Modules """
 # 2. GFS Module
-def gfs_module(date, syn_coords, mes_coords):
+def gfs_module(date, syn_coords, mes_coords, out_folder):
     """
     GFS module: 
         1. Download of the GFS output files for the 00 UTC run of the model
@@ -247,24 +247,25 @@ def gfs_module(date, syn_coords, mes_coords):
             },
             name='tp'
         )
-        # ds.attrs.update(ds_precip.attrs) # Add attributes
+
         ds.attrs['units'] = 'kg m-2'
         ds.attrs['long_name'] = 'Total precipitation'
         ds.attrs['standard_name'] = 'precipitation_amount'
-        data_array_list.append(ds)
+        ds.attrs['GRIB_cfVarName'] = 'tp'
+        ds.attrs['GRIB_stepType'] = '1h-accum'
+        ds.attrs['GRIB_iDirectionIncrementInDegrees'] = '0.25'
 
+        data_array_list.append(ds)
         p_field_previous = p_field.values # Save the precipitation field to compute hourly field for the next step
 
-    gfs_ds = xr.concat(data_array_list, dim='valid_time')
-    gfs_ds.attrs.update(ds_precip.attrs)
-    gfs_ds.attrs.update({
-        'title': 'GFS hourly Cumulative Precipitation Data',
-        'history': f'Created on {pd.Timestamp.now()} from GFS data data',
-        'Conventions': 'CF-1.7',
-        'institution': 'Universitat de Barcelona, GAMA team',
-        'source': 'GFS (NOAA)',
-        'references': 'https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast'
-    })
+    gfs_ds = xr.concat(data_array_list, dim='valid_time').to_dataset(name='tp')
+
+    gfs_ds.attrs['title'] = 'GFS hourly Cumulative Precipitation Data'
+    gfs_ds.attrs['history'] = f'Created on {pd.Timestamp.now()} from GFS data',
+    gfs_ds.attrs['Conventions'] = 'CF-1.7'
+    gfs_ds.attrs['institution'] = 'Universitat de Barcelona, GAMA team'
+    gfs_ds.attrs['source'] = 'GFS (NOAA)'
+    gfs_ds.attrs['references'] = 'https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast'
 
     # Fix units and add other attributes for coordinates
     gfs_ds.coords['longitude'].attrs['units'] = 'degrees_east'
@@ -281,15 +282,15 @@ def gfs_module(date, syn_coords, mes_coords):
     gfs_ds.coords['valid_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
 
     gfs_ds.coords['initialization_time'].attrs['long_name'] = 'Initialization Time of GFS model'
-    gfs_ds.coords['initialization_time'].attrs['standard_name'] = 'initialization_time'
+    gfs_ds.coords['initialization_time'].attrs['standard_name'] = 'time'
     gfs_ds.coords['initialization_time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
 
     # Save p_field as netcdf file
-    output_fp = f'output/{date_str}/gfs_forecast.nc'
+    output_fp = f'{out_folder}/gfs_forecast.nc'
     gfs_ds.to_netcdf(output_fp)
 
     # Plot precipitation field of GFS forecast
-    p_fold = f'output/{date_str}/precip_field_plot'
+    p_fold = f'{out_folder}/precip_field_plot'
     os.makedirs(p_fold, exist_ok=True)
 
     plot_precip_field(gfs_ds, savepath = f'{p_fold}/gfs.png', title = 'GFS forecast') # plot precipitation field
@@ -298,7 +299,7 @@ def gfs_module(date, syn_coords, mes_coords):
     return z500, z1000, z500_wt, z1000_wt
 
 # 3. Analogs Computation Module
-def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
+def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt, out_folder):
     """
     Identifies and ranks analog dates based on geopotential heights (z500, z1000) and their respective weather types.
     The module computes scores for each analog candidate and saves the top analogs
@@ -332,7 +333,7 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     ref_year = ref_date.year
     # analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year]
     analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year
-                    and 1940 <= pd.to_datetime(date).year <= 2023]
+                    and 1940 <= pd.to_datetime(date).year <= 1980]
 
 
     # Mooving window module
@@ -382,7 +383,7 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     top_analogs =  an_list_sorted[['Date', 'Score']].head(10) # Keep the top 10 analogs
 
     # Save the top analogs in a csv file
-    top_analogs.to_csv(f'output/{date_str}/top_analogs.csv', columns=['Date', 'Score'], index=False)
+    top_analogs.to_csv(f'{out_folder}/top_analogs.csv', columns=['Date', 'Score'], index=False)
 
     # Plot GPT fields for best 10 analogs
     idx=0
@@ -391,7 +392,7 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
         z500_an = ds_500.sel(time=pd.to_datetime(an_date))['z'].values / 9.81  # Extract z500 field
         z1000_an = ds_1000.sel(time=pd.to_datetime(an_date))['z'].values / 9.81  # Extract z1000 field
 
-        fold = f'output/{date_str}/analog_gpt_field'
+        fold = f'{out_folder}/analog_gpt_field'
         os.makedirs(fold, exist_ok=True)
 
         plot_gpt(z500, z500_an, ds_500.longitude, ds_500.latitude, title1=f'Z500 - Target day: {ref_date.date()}',
@@ -402,7 +403,7 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt):
     return top_analogs
 
 # 4. Analog Precipitation Module
-def an_precipitation_module(today, an_datelist, coords):
+def an_precipitation_module(today, an_datelist, coords, out_folder):
     """
     Processes analog precipitation data for specified dates, computes total precipitation,
     normalizes the field, and saves the results as NetCDF files. Additionally, it plots
@@ -432,17 +433,17 @@ def an_precipitation_module(today, an_datelist, coords):
         idx+=1
         an_date = pd.to_datetime(an_date)
         year = an_date.year # Extract year of the analog date
-        filepath = f'input/cat_ERA5_precip_ds/{year}_ds.grib'
+        filepath = f'input/ERA5_precip_ds/{year}_ds.grib'
         with xr.open_dataset(filepath, engine='cfgrib') as ds:
             analog_ds = compute_hourly_era5_ds(an_date, ds, ref_date, coords)
 
             # Save as NetCDF file
-            folder = f"output/{date_str}/analog_nc"
+            folder = f"{out_folder}/analog_nc"
             os.makedirs(folder, exist_ok = True)
             analog_ds.to_netcdf(f'{folder}/Analog_{idx}.nc', mode = 'w')
 
             # Plot precipitation fields for each analog
-            p_fold = f'output/{date_str}/precip_field_plot'
+            p_fold = f'{out_folder}/precip_field_plot'
             os.makedirs(p_fold, exist_ok=True)
 
             plot_precip_field(analog_ds, savepath = f'{p_fold}/analog_{idx}.png', title = f'Analog {idx} - {an_date.date()}') # plot precipitation field
