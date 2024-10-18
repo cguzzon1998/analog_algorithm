@@ -91,10 +91,14 @@ The script allows you to define the date for which the analysis will be performe
 The script will automatically create an output folder for the results, named after the target date (e.g., `output/20231003` for October 3rd, 2024).
 
 ### 2. Definition of the Spatial Domain
-The algorithm is based on two spatial domains, one at synoptic level, to evaluate analogs from geopotential fields, and the second one at mesoscale domain, to evaluate and extract precipitation fieldsYou need to define two spatial domains:
-- **Synoptic Domain:** This is the larger domain used to evaluate the geopotential (GPT) fields for analog selection on a synoptic scale. The latitude and longitude bounds are set manually within the script. By default they are set for the **Western Mediterranean Region (D09)** ([Philipp et al., 2010](#philipp2010))
- 
-- **Mesoscale Domain:** This smaller domain is used for evaluating and extracting in NetCDF format the precipitation fields at mesoscale level. It is specific to the region of interest. By default is set up for Catalonia region (coords = [lon(0, 3.5); lat(40, 43)]).
+
+The algorithm is designed to evaluate analogs based on two spatial domains:
+
+- **Synoptic Domain:** This is the larger domain used to evaluate the geopotential (GPT) fields for analog selection on a synoptic scale. The latitude and longitude boundaries are manually set within the script, and by default, are configured for the **Western Mediterranean Region (D09)** ([Philipp et al., 2010](#philipp2010))
+
+- **Mesoscale Domain:** The extraction of precipitation fields for analogs can either be performed over the entire synoptic domain by setting the mesoscale domain equal to the synoptic domain, or limited to a specific sub-region. within the synoptic domain by defining different coordinates for the mesoscale domain. It is important to note that the Mesoscale domain must always be contained within the synoptic domain. 
+By default is set up for Catalonia region (coords = [lon(0, 3.5); lat(40, 43)]).
+
 
 ### 3. Flag for ERA5 Reanalysis Data downloading
 
@@ -213,68 +217,79 @@ It contains a folder for each day for which the algorithm has been run in the fo
 
 
 ## NetCDF files format
-### gfs_forecast.nc**:
-```plaintext
-<xarray.DataArray 'tp' (time: 24, latitude: 13, longitude: 15)> Size: 19kB
-[4680 values with dtype=float32]
-Coordinates:
-  * latitude        (latitude) float64 104B 43.0 42.75 42.5 ... 40.5 40.25 40.0
-  * longitude       (longitude) float64 120B 0.0 0.25 0.5 0.75 ... 3.0 3.25 3.5
-    init_time       datetime64[ns] 8B ...
-    valid_time      (time) datetime64[ns] 192B ...
-    start_acc_time  (time) datetime64[ns] 192B ...
-Dimensions without coordinates: time
-Attributes: (12/30)
-    GRIB_typeOfLevel:                         surface
-    GRIB_stepUnits:                           1
-    GRIB_stepType:                            accum
-    GRIB_name:                                Total Precipitation
-    GRIB_shortName:                           tp
-    GRIB_units:                               kg m**-2
-    long_name:                                Total Precipitation
-    units:                                    kg m**-2 
-```
-**Coordinates:**
-- *latitude*: resolution of 0.25º
-- *longitude*: resolution of 0.25º
-- *init_time* is the time of initialization of the GFS model run, i.e. the target day at 00 UTC
-- *valid_time* is the current time of hourly precipitation accumulation forecast, so it is the end acuumulation time (e.g: valid_time = 01:00 represents the accumulation period from 00:00 UTC to 01:00 UTC)
-- *start_acc_time* is the initial time of the accumulation period (e.g: 00:00 UTC for the accumulation period from 00:00 UTC to 01:00 UTC)
-
-**Attributes:**
-- *units*: kg m**-2 which correspond to mm (millimiters of rainfall fallen in the pixel in 1 hour period)
-
-### **Analog_i.nc**:
+### gfs_forecast.nc:
 
 ```plaintext
-<xarray.DataArray 'tp' (valid_time: 24, latitude: 13, longitude: 15)> Size: 37kB
-[4680 values with dtype=float64]
+<xarray.Dataset> Size: 19kB
+Dimensions:              (latitude: 13, longitude: 15, valid_time: 24)
 Coordinates:
-  * latitude        (latitude) float64 104B 43.0 42.75 42.5 ... 40.5 40.25 40.0
-  * longitude       (longitude) float64 120B 0.0 0.25 0.5 0.75 ... 3.0 3.25 3.5
-    an_day          datetime64[ns] 8B ...
-  * valid_time      (valid_time) datetime64[ns] 192B 2002-08-10T01:00:00 ... ...
-    start_acc_time  (valid_time) datetime64[ns] 192B ...
+  * latitude             (latitude) float64 104B 43.0 42.75 42.5 ... 40.25 40.0
+  * longitude            (longitude) float64 120B 0.0 0.25 0.5 ... 3.0 3.25 3.5
+  * valid_time           (valid_time) datetime64[ns] 192B 2024-10-18T01:00:00...
+    initialization_time  datetime64[ns] 8B ...
+Data variables:
+    tp                   (valid_time, latitude, longitude) float32 19kB ...
+    units:                              kg m-2
+    long_name:                          Total precipitation
+    standard_name:                      precipitation_amount
+    GRIB_cfVarName:                     tp
+    GRIB_stepType:                      1h-accum
+    GRIB_iDirectionIncrementInDegrees:  0.25
 Attributes:
-    GRIB_edition:            1
-    GRIB_centre:             ecmf
-    GRIB_centreDescription:  European Centre for Medium-Range Weather Forecasts
-    GRIB_subCentre:          0
-    Conventions:             CF-1.7
-    institution:             European Centre for Medium-Range Weather Forecasts
-    history:                 2024-10-03T13:31 GRIB to CDM+CF via cfgrib-0.9.1
-    units:                   mm
+    title:        GFS hourly Cumulative Precipitation Data
+    history:      Created on 2024-10-18 09:03:54.871129 from GFS data
+    Conventions:  CF-1.7
+    institution:  Universitat de Barcelona, GAMA team
+    source:       GFS (NOAA)
+    references:   https://www.ncei.noaa.gov/products/weather-climate-models/g...
+    
 ```
 
 **Coordinates:**
-- *latitude*: resolution of 0.25º
-- *longitude*: resolution of 0.25º
-- *an_date* is the analog date at 00:00 UTC
-- *valid_time* is the current time of hourly precipitation accumulation forecast, so it is the end acuumulation time (e.g: valid_time = 01:00 represents the accumulation period from 00:00 UTC to 01:00 UTC)
-- *start_acc_time* is the initial time of the accumulation period (e.g: 00:00 UTC for the accumulation period from 00:00 UTC to 01:00 UTC)
+- *latitude*: resolution of 0.25 deg
+- *longitude*: resolution of 0.25 deg
+- *valid_time* is the current time of hourly precipitation accumulation forecast, i.e. the end of acuumulation time (e.g: valid_time = 01:00 represents the accumulation period from 00:00 UTC to 01:00 UTC)
+- *init_time* is the time of initialization of the GFS model run, i.e. the target day at 00 UTC
 
-**Attributes:**
-- *units*: mm (millimiters of rainfall fallen in the pixel in 1 hour period)
+**Data variables:**
+- *tp*: total 1h-accumulated precipitation, expressed in *kg m-1* (corresponding to *mm* of rainfall)
+
+
+### Analog_i.nc:
+
+```plaintext
+<xarray.Dataset> Size: 38kB
+Dimensions:      (latitude: 13, longitude: 15, valid_time: 24)
+Coordinates:
+  * latitude     (latitude) float64 104B 43.0 42.75 42.5 ... 40.5 40.25 40.0
+  * longitude    (longitude) float64 120B 0.0 0.25 0.5 0.75 ... 3.0 3.25 3.5
+  * valid_time   (valid_time) datetime64[ns] 192B 2024-10-18T01:00:00 ... 202...
+    analog_date  datetime64[ns] 8B ...
+Data variables:
+    tp           (valid_time, latitude, longitude) float64 37kB ...
+    units:                              kg m-2
+    long_name:                          Total precipitation
+    standard_name:                      precipitation_amount
+    GRIB_cfVarName:                     tp
+    GRIB_stepType:                      1h-accum
+Attributes:
+    title:        ERA5 hourly Cumulative Precipitation Data
+    history:      Created on 2024-10-18 09:05:04.802954 from ERA5 Reanalysis ...
+    Conventions:  CF-1.7
+    institution:  Universitat de Barcelona, GAMA team
+    source:       ERA5 Reanalysis
+    references:   https://climate.copernicus.eu/climate-reanalysis
+
+```
+
+**Coordinates:**
+- *latitude*: resolution of 0.25 deg
+- *longitude*: resolution of 0.25 deg
+- *valid_time*: is the current time of hourly precipitation accumulation forecast, i.e. the end acuumulation time (e.g: valid_time = 01:00 represents the accumulation period from 00:00 UTC to 01:00 UTC)
+- *analog_date*: is the date corresponding to the analog day (at 00:00 UTC)
+
+**Data variables:**
+- *tp*: total 1h-accumulated precipitation, expressed in *kg m-1* (corresponding to *mm* of rainfall)
 
 
 ## References
