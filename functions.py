@@ -89,7 +89,7 @@ def download_era5_precip(coords):
     precip_fold = 'input/ERA5_precip_ds'
     os.makedirs(precip_fold, exist_ok=True)
 
-    for y in tqdm(range(1961, 2024), desc = 'Downloading ERA5 precipitation reanalysis data', leave = False):
+    for y in tqdm(range(1995, 2024), desc = 'Downloading ERA5 precipitation reanalysis data', leave = False):
 
         dataset = "reanalysis-era5-single-levels"
         request = {
@@ -164,7 +164,6 @@ def compute_era5_wts():
     df = pd.DataFrame(wt_table, columns=["Date", "wt_500", "wt_1000"])
     df.to_csv("input/era5_classification.csv", index=False)
 
-
 # %% Compute Seasonal Precipitation Standardization Statistics (SPSS)
 from tqdm import tqdm
 from datetime import datetime, timedelta
@@ -203,10 +202,10 @@ def compute_spss(coords):
         
         OUTPUT: NetCDF file saved with the path: 'input/seasonal_precip_standardization.nc'
     """
-    thr = 1/24 # Set the threshold of precipitation
+    # thr = 1/24 # Set the threshold of precipitation [mm]
 
     # Define the range of years
-    start_year = 1990
+    start_year = 1993
     end_year = 2023
 
     # Create the xarray dataset
@@ -228,11 +227,10 @@ def compute_spss(coords):
             for date in tqdm(date_list, desc=f"Days {year}", leave=False):
                 daily_p = compute_p_field(date, ds)
 
-                daily_p = np.where(daily_p < thr, np.nan, daily_p) # Convert to Nan all the values lower than the threshold
+                # daily_p = np.where(daily_p < thr, np.nan, daily_p) # Convert to Nan all the values lower than the threshold
                 daily_p_array[idx, :, :] = daily_p
                 idx += 1
-
-    daily_p_ds = xr.Dataset({"daily_p": (["time", "lat", "lon"], daily_p_array)},
+    daily_p_ds = xr.Dataset({"daily_p": (["time", "latitude", "longitude"], daily_p_array)},
                              coords={"time": all_dates,'latitude' : lat,'longitude' : lon})
 
     # Add attributes to the dataset
@@ -263,6 +261,8 @@ def compute_spss(coords):
         # Compute mean and std field of precipitation
         av =  np.nanmean(fields_array, axis=0)
         std = np.nanstd(fields_array, axis=0)
+        av = np.nan_to_num(av, nan=0)
+        std = np.nan_to_num(std, nan=0)
 
         av_fields.append(av)
         std_fields.append(std)
@@ -270,19 +270,17 @@ def compute_spss(coords):
     # Create an xarray dataset with the results
     ds = xr.Dataset(
         {
-            'av_field': (('day_of_year', 'lat', 'lon'), np.array(av_fields)),
-            'std_field': (('day_of_year', 'lat', 'lon'), np.array(std_fields))
+            'av_field': (('day', 'latitude', 'longitude'), np.array(av_fields)),
+            'std_field': (('day', 'latitude', 'longitude'), np.array(std_fields))
         },
         coords={
-            'day_of_year': np.arange(1, 366),
-            'latitude': daily_p_ds.lat,
-            'longitude': daily_p_ds.lon
+            'day': np.arange(1, 366),
+            'latitude': daily_p_ds.latitude,
+            'longitude': daily_p_ds.longitude
         }
     )
 
-
     ds.to_netcdf('input/seasonal_precipitation_statistics.nc') # Save the dataset to a NetCDF file
-
 
 # %% WTs computation
 """ Functions to compute Weather Types using Beck classification (Beck, 2000)"""
@@ -386,7 +384,6 @@ def compute_wt(field):
     return syn_class
 
 # %% Compute Analogs
-
 from scipy.spatial.distance import euclidean
 from scipy.stats import pearsonr
 import pdb
@@ -422,7 +419,6 @@ def compute_score(z500_ref, z1000_ref, z500_an, z1000_an):
     
     # Calculate the score
     return euclidean_distance_500,  euclidean_distance_1000, pearson_distance_500, pearson_distance_1000
-    
 
 # %% Plot of precipitation field
 import xarray as xr
@@ -598,7 +594,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
             
             field_ds = ds_domain.isel(time=day).isel(step=tstep)
             field = field_ds.tp.values * 1000  # Convert to mm of rainfall
-            # norm_field = normalize_field(field, date, ref_date) # SPSS routine
+            norm_field = normalize_field(field, date, ref_date, coords) # SPSS routine
 
             # Create the prediction_time variable (Epoch time)
             prediction_time = np.int32(prediction_time_seconds)
@@ -609,7 +605,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
 
             # Create the new DataArray with the new time variables
             ds_new = xr.DataArray(
-                data=field,
+                data=norm_field,
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
@@ -660,7 +656,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
 
     return analog_ds
 
-def normalize_field(field, an_date, ref_date):
+def normalize_field(field, an_date, ref_date, coords):
     """
     Seasonal standardization of the precipitation field based on the average and standard 
     deviation from the 'seasonal_precip_standardization' dataset. This file must be included in the 'input' folder
@@ -676,37 +672,51 @@ def normalize_field(field, an_date, ref_date):
     """
     
     ds = xr.open_dataset('input/seasonal_precipitation_statistics.nc')
+    ds = ds.sel(latitude=slice(coords[1], coords[0]), longitude=slice(coords[2], coords[3])) # Select mesoscale domain
+
     # Analog day
     n_day = (an_date - pd.Timestamp(an_date.year, 1, 1)).days + 1
-    an_av = ds['av_field'].sel(day_of_year=n_day, method='nearest').values
-    an_sd = ds['std_field'].sel(day_of_year=n_day, method='nearest').values
+    an_av = ds['av_field'].sel(day=n_day, method='nearest').values
+    an_sd = ds['std_field'].sel(day=n_day, method='nearest').values
 
     # Reference date
     n_day = (ref_date - pd.Timestamp(ref_date.year, 1, 1)).days + 1
-    ref_av = ds['av_field'].sel(day_of_year=n_day, method='nearest').values
-    ref_sd = ds['std_field'].sel(day_of_year=n_day, method='nearest').values
+    ref_av = ds['av_field'].sel(day=n_day, method='nearest').values
+    ref_sd = ds['std_field'].sel(day=n_day, method='nearest').values
     norm_field = ref_sd * ((field - an_av) / an_sd) + ref_av
     norm_field[norm_field < 0] = 0
 
     return norm_field
 
 
-# %% Mooving Window module
-def is_within_window(candidate_date, ref_date):
-    candidate_month_day = (candidate_date.month, candidate_date.day)
-    
-    # Convert to day of the year for easier comparison
-    ref_day_of_year = ref_date.timetuple().tm_yday
-    candidate_day_of_year = candidate_date.timetuple().tm_yday
+# %% Compute percentage of inungama events in the founded analogs
+import pandas as pd
 
-    # Calculate days between 2 months before and 2 months after
-    # Handle the year boundaries (e.g., December to January)
-    start_window = (ref_day_of_year - 61) % 365
-    end_window = (ref_day_of_year + 61) % 365
+def compute_inungama_percentage(analog, best_analogs, z500, z1000, output_file):
+    inungama_df = pd.read_csv('input/inungama_events.csv')  # Load the inungama events CSV file
+
+    # Convert the 'Date' column to datetime for easier comparison
+    inungama_df['Date'] = pd.to_datetime(inungama_df['Date'])
+    best_analogs = pd.to_datetime(best_analogs)
+    analog = pd.to_datetime(analog)  # Cast 'analog' to datetime
+
+    # 1. Percentage of inungama events in 'best_analogs'
+    common_dates = inungama_df[inungama_df['Date'].isin(best_analogs)]
+    percent_top10 = len(common_dates) / len(best_analogs) * 100
+
+    # 2. Percentage of inungama events in 'analog', divided by the 4 categories
+    total_analog_events = inungama_df[inungama_df['Date'].isin(analog)]
+    percentage_all = len(total_analog_events) / len(inungama_df['Date']) * 100
+    category_counts = total_analog_events['Category'].value_counts()
+    category_percentages = category_counts / len(total_analog_events) * 100
+
+    # Writing the results to a text file
+    with open(output_file, 'w') as f:
+        f.write(f"Percentage of flood events in the top 10 analogs: {percent_top10:.2f}%\n\n")
+        f.write(f"Percentage of flood events occurred with these WTs: {z500} at 500 hPa, {z1000} at 1000 hPa:\n{percentage_all:.2f}% ({len(total_analog_events)} events on {len(inungama_df['Date'])} total occurences)\n\n")
+        
+        f.write('Divided by severity categories:\n')
+        for category, count in category_counts.items():
+            percentage = category_percentages[category]
+            f.write(f"- {category}: {count} events ({percentage:.2f}%)\n")
     
-    if start_window <= end_window:
-        # Simple case: the window is within the same year
-        return start_window <= candidate_day_of_year <= end_window
-    else:
-        # Window spans across the end of the year (e.g., November to February)
-        return candidate_day_of_year >= start_window or candidate_day_of_year <= end_window

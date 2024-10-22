@@ -92,12 +92,11 @@ The script will automatically create an output folder for the results, named aft
 
 ### 2. Definition of the Spatial Domain
 
-The algorithm is designed to evaluate analogs based on two spatial domains:
+The algorithm is designed to evaluate analogs based on a specified spatial domain. It has been primarily developed and tested for evaluating analogs over a synoptic domain, with the **Western Mediterranean Region (D09)** as the default domain ([Philipp et al., 2010](#philipp2010)).
 
-- **Synoptic Domain:** This is the larger domain used to evaluate the geopotential (GPT) fields for analog selection on a synoptic scale. The latitude and longitude boundaries are manually set within the script, and by default, are configured for the **Western Mediterranean Region (D09)** ([Philipp et al., 2010](#philipp2010))
+The algorithm can also be run for other regions by modifying the *syn_coords* variables in the script's settings section. In such cases, it is necessary to download the corresponding ERA5 reanalysis data for the new region and compute the climatological fields for that area. This is required to perform seasonal standardization of the precipitation fields. To enable this process, the following flags in the settings section must be set to **True**: *ERA5_download* *ERA5_wts*, and *seasonal_standardization*. By default, the algorithm is configured for the D09 Western Mediterranean region (coordinates: [lon(-17, 9); lat(31, 48)]).
 
-- **Mesoscale Domain:** The extraction of precipitation fields for analogs can either be performed over the entire synoptic domain by setting the mesoscale domain equal to the synoptic domain, or limited to a specific sub-region. within the synoptic domain by defining different coordinates for the mesoscale domain. It is important to note that the Mesoscale domain must always be contained within the synoptic domain. 
-By default is set up for Catalonia region (coords = [lon(0, 3.5); lat(40, 43)]).
+The evaluation of precipitation fields for the analog dates can be conducted over the entire synoptic domain by setting the mesoscale coordinates (*mes_coords*) to match the synoptic coordinates (*syn_coords*). Alternatively, the evaluation can be performed for a smaller region within the synoptic domain. In this case, the spatial domain for precipitation evaluation must be specified by modifying the *mes_coords* variables in the settings section. It is important to ensure that the mesoscale domain is always fully contained within the synoptic domain. By default, the mesoscale domain is set to the Catalonia region (coordinates: [lon(0, 3.5); lat(40, 43)]).
 
 
 ### 3. Flag for ERA5 Reanalysis Data downloading
@@ -105,17 +104,17 @@ By default is set up for Catalonia region (coords = [lon(0, 3.5); lat(40, 43)]).
 The algorithm can automatically download ERA5 reanalysis data for the defined spatial domains. By default, this is set to False to avoid unnecessary downloads, as this step can be time- and memory-intensive. You can change the era5_download variable to True to enable the download.
 To download ERA5 data, the script relies on the Copernicus Climate Data Store (CDS) API, which requires that you have the API key properly configured. (See the ERA5 API Setup section for details).
 
-ERA5 API uses for download the same coordinates specified in the previous section of the setup (Synoptic domains for GPTs and mesosclae domains for precipitation). Remember to download again reanalysis data in case of change coordinates setup, by imposing **era5_download=True**
+ERA5 API uses for download the same coordinates specified in the previous section of the setup (Synoptic domains for GPTs and mesosclae domains for precipitation). Remember to download again reanalysis data in case of change coordinates setup of synoptic spatial domain (*syn_coords*), by imposing **era5_download=True**
 
 ### 4. Flag for Weather Types (WTs) computation
 If it set equal to **True** the algorithm computes the WTs table from the ERA5 geopotential data using the synoptic spatial domain and saves it in the file *input/era5_classification.csv'*
 
-**! WARNING**: every time you change the spatial domain definition WTs must be computed again **!**
+**! WARNING**: every time you change the synoptic spatial domain (*syn_coords*) definition WTs must be computed again **!**
 
 ### 5. Flag for Seasonal Precipitation Standardization Statistics (SPSS) computation
 If it is set equal to **True** the algorithm computes the NetCDF file used to compute the seasonal standardization in the analog method and saves it in the file *input/seasonal_precipitation_statistics.nc'*
 
-**! WARNING**:  every time you change the spatial domain definition WTs must be computed again **!** """
+**! WARNING**:  every time you change the synoptic spatial domain (*syn_coords*)  definition WTs must be computed again **!** """
 
 
 ### Example of default setup of the algorithm
@@ -125,13 +124,13 @@ If it is set equal to **True** the algorithm computes the NetCDF file used to co
     today = datetime.today() # Get today's date
 
     ############## Definition of the spatial domain ##############
-    # Synoptic domain: to extract GPT field and compute WTs
+    # Synoptic domain: to evaluate analogs
     syn_lat_s = 31
     syn_lat_n = 48
     syn_lon_w = -17
     syn_lon_e = 9
 
-    # Mesoscale domain: to extract precipitation field
+    # Mesoscale domain: to evaluate and extract precipitation fields
     """
     - cat = (40, 43, 0, 3.5)
     - arga = (42.25, 43.25, -2.75, -0.75)
@@ -189,7 +188,9 @@ The **Analog algorithm**, contained in the script *analog_algorithm.py* is divid
 5. **Analogs Computation Module**:
     - Identifies and ranks analogs comparing GPT fields forecasted by GFS at 500 and 1000 hPa with ERA5 reanalysis GPT fields, for historical days with the same WTs of the target day
     - Computes a score for each potential analog day and ranks the top 10 based on these scores.
-    - Saves the ranked analog days in a CSV file and plots their respective geopotential fields in the folder *'output/yyyymmdd/analog_gpt_field*.
+    - Saves the ranked analog days in a CSV file and plots their respective geopotential fields in the folder *output/yyyymmdd/analog_gpt_field*
+    -  Computes the statistics about floods events recorded in the past days with the same WTs of the target day analyzed and saves them in a text file in the path *output/yyyymmdd/flood_statistics.txt*. Flood events are extracted from the INUNGAMA database ([Barnolas and Llasat, 2007](#Barnolas2007))
+
 
 6. **Analog Precipitation Module**:
     - For the 10 best analogs, the hourly precipitation fields are retrieved from the ERA5 dataset for a +24h time range
@@ -212,6 +213,7 @@ It contains a folder for each day for which the algorithm has been run in the fo
 - *analog_gpt_field/*: plots of the GPT fields at 500 and 1000 hPa with the comparison between the target date and the analogs
 - *analog_nc/*: NetCDF files with the hourly precipitation fields for the best ten analogs up to +024h (from *Analog_1.nc* to *Analog_10.nc*)
 - *precip_field_plot/*: plots of the hourly cumulated precipitation fields for the 24h-period analyzed, for the 10 best analogs (*analog_i.png*) and for the GFS forecast (*gfs.png*)
+- flood_statistics.txt: text file containing the statistics of the flood events occurred in the past in days with same WTs of the target day analyzed, according to INUNGAMA flood database ([Barnolas and Llasat, 2007](#Barnolas2007))
 - *gfs_forecast.nc*: netCDF file containing the GFS forecast of the hourly precipitation field for the target date, from +001 to +024h forecasting time
 - *top_analogs.csv*: csv file with the dates of the 10 best analogs computed for the target date and their score
 
@@ -297,8 +299,9 @@ Attributes:
 - **Philipp, A.**, Bartholy, J., Beck, C., Erpicum, M., Esteban, P., Fettweis, X., Huth, R., James, P., Jourdain, S., Kreienkamp, F., Krennert, T., Lykoudis, S., Michalides, S. C., Pianko-Kluczy´nska, K., Post, P.,´Alvarez, D. F. R., Schiemann, R. K. H., Spekat, A., and Tymvios, F. (2010).
 Cost733cat - a database of weather and circulation type classifications. Physics and Chemistry of The Earth, 35:360–373
 
-- **Beck, C.** (2000). Zirkulationsdynamische Variabilit¨at
-im Bereich Nordatlantik-Europa seit 1780
+- **Beck, C.** (2000). Zirkulationsdynamische Variabilitat im Bereich Nordatlantik-Europa seit 
+
+- **Barnolas, M. and Llasat, M. C**. (2007). A flood geodatabase and its climatological applications: the case of catalonia for the last century. Natural Hazards and Earth System Sciences, 7(2):271–281.
 
 ## Contact
 
