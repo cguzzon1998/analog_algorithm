@@ -6,7 +6,7 @@ def main():
     import pandas as pd
     from functions import download_era5_gpt, download_era5_precip, compute_era5_wts, compute_spss
     
-    ##########################################################################################################################
+    #####################################################  SETTINGS  #########################################################
     """ Setting of the function:
             1. Definition of the Target Day to analyze (Today or previous days)
             2. Definition of the spatial domain: 
@@ -20,28 +20,29 @@ def main():
     ############### Definition of the target date ################
     today = datetime.today() # Get today's date
     date_str = today.strftime('%Y%m%d')
-    out_folder = f'output/arga_{date_str}' # Create the output folder
+    out_folder = f'output/{date_str}' # Create the output folder
     os.makedirs(out_folder, exist_ok=True)
     
     
     ############## Definition of the spatial domain ##############
-    # Synoptic domain: to extract GPT field and compute WTs
+    # Synoptic domain: to evaluate analogs
     syn_lat_s = 31
     syn_lat_n = 48
     syn_lon_w = -17
     syn_lon_e = 9
     syn_coords = [syn_lat_n, syn_lat_s, syn_lon_w, syn_lon_e]
 
-    # Mesoscale domain: to extract precipitation field
+    # Mesoscale domain: to evaluate and extract precipitation fields
     """
-    - cat = (40, 43, 0, 3.5)
-    - arga = (42.25, 43.25, -2.75, -0.75)
+    - Catalunya = (40, 43, 0, 3.5)
+    - Arga Basin = (42.25, 43.25, -2.75, -0.75)
+    - Francoli Basin = (41, 41.5, 0.75, 1.5)
     - d09 (Weastern Europe) = (31, 48, -17, 9)
     """
-    mes_lat_s = 42.25
-    mes_lat_n = 43.25
-    mes_lon_w = -2.75
-    mes_lon_e = -0.75
+    mes_lat_s = 40
+    mes_lat_n = 43
+    mes_lon_w = 0
+    mes_lon_e = 3.5
     mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
 
 
@@ -91,7 +92,7 @@ def main():
 
     # 3. Compute SSPS
     if seasonal_standardization == True:
-        compute_spss(mes_coords)
+        compute_spss(syn_coords)
 
     # 4. Call GFS Module
     print('Running GFS Module:')
@@ -108,13 +109,13 @@ def main():
     an_precipitation_module(today, analog_table['Date'], mes_coords, out_folder)
     print('\n')
 
-    # # 7. Delate GFS forecast
-    # path = 'input/gfs_files'
-    # try:
-    #    shutil.rmtree(path)
-    #    print('GFS files correcly delated')
-    # except OSError as e:
-    #    print(f'Error: {e}')
+    # 7. Delate GFS forecast
+    path = 'input/gfs_files'
+    try:
+       shutil.rmtree(path)
+       print('GFS files correcly delated')
+    except OSError as e:
+       print(f'Error: {e}')
 
 
 """ Modules """
@@ -143,7 +144,6 @@ def gfs_module(date, syn_coords, mes_coords, out_folder):
     from tqdm import tqdm
 
     date_str = date.strftime('%Y%m%d')
-
     base_url = f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.{date_str}/00/atmos/" # Construct the URL
 
     # Create the 'input' directory if it doesn't exist
@@ -318,31 +318,24 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt, out_folder):
     - PNG files of the geopotential fields for the top 10 analogs saved in the 'analog_gpt_field' folder.
     """
    
-    date_str = ref_date.strftime('%Y%m%d')
-
     # a: Read WTs classification of ERA5 Reanalysis and subsets analogs candidates based on WTs
     import pandas as pd
     import os
     from datetime import timedelta, datetime
-    from functions import is_within_window
 
     filepath = 'input/era5_classification.csv'
     era5_wt = pd.read_csv(filepath, na_filter=False)
     analog_candidate = era5_wt.loc[(era5_wt['wt_500'] == z500_wt) & ((era5_wt['wt_1000'] == z1000_wt))]['Date'].tolist()
+
     # Exclude analog belonging to the same year of the reference date
     ref_year = ref_date.year
-    # analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year]
     analog_datelist = [date for date in analog_candidate if pd.to_datetime(date).year != ref_year
-                    and 1940 <= pd.to_datetime(date).year <= 1980]
-
-
-    # Mooving window module
-    # analog_datelist = [date for date in analog_datelist if is_within_window(pd.to_datetime(date), ref_date)]
+                    and 1940 <= pd.to_datetime(date).year <= 2023] # Possibile to select the period for analog search
 
     # b: Analog's ranking
     from tqdm import tqdm
     import xarray as xr
-    from functions import compute_score, plot_gpt
+    from functions import compute_score, plot_gpt, compute_inungama_percentage
 
     # Open ERA5 geopotential bases
     ds_500 = xr.open_dataset('input/ERA5_gpt_ds/geopotential_data_500.grib')
@@ -400,6 +393,10 @@ def analogs_module(ref_date, z500, z1000, z500_wt, z1000_wt, out_folder):
         plot_gpt(z1000, z1000_an, ds_1000.longitude, ds_1000.latitude, title1=f'Z1000 - Target day: {ref_date.date()}', 
                  title2=f'Z1000 - Analog {idx} - {an_date}', vmin=-300, vmax=300, savepath=f'{fold}/z1000_analog_{idx}.png')
 
+    # Computation of percentage of inungama events
+    output_file = f'{out_folder}/flood_statistics.txt'
+    compute_inungama_percentage(an_list_sorted['Date'], top_analogs['Date'], z500_wt, z1000_wt, output_file)
+
     return top_analogs
 
 # 4. Analog Precipitation Module
@@ -427,7 +424,6 @@ def an_precipitation_module(today, an_datelist, coords, out_folder):
     from functions import plot_precip_field, compute_hourly_era5_ds
 
     ref_date = pd.to_datetime(today).normalize() # trasform today in date format (ref_date)
-    date_str = ref_date.strftime('%Y%m%d')
     idx = 0
     for an_date in tqdm(an_datelist, total=len(an_datelist), desc = 'Saving analog precipitation fields', leave = False):
         idx+=1
