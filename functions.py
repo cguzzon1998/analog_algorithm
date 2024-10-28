@@ -605,7 +605,7 @@ def compute_hourly_era5_ds(date, ds, ref_date, coords):
 
             # Create the new DataArray with the new time variables
             ds_new = xr.DataArray(
-                data=norm_field,
+                data=field,
                 dims=['latitude', 'longitude'],
                 coords={
                     'latitude': field_ds.latitude.values, 
@@ -706,17 +706,16 @@ def compute_inungama_percentage(analog, best_analogs, z500, z1000, output_file):
 
     # 2. Percentage of inungama events in 'analog', divided by the 4 categories
     total_analog_events = inungama_df[inungama_df['Date'].isin(analog)]
-    percentage_all = len(total_analog_events) / len(inungama_df['Date']) * 100
+    percentage_all = len(total_analog_events) / len(analog) * 100
     category_counts = total_analog_events['Category'].value_counts()
     category_percentages = category_counts / len(total_analog_events) * 100
 
     # Writing the results to a text file
     with open(output_file, 'w') as f:
         f.write(f"Percentage of flood events in the top 10 analogs: {percent_top10:.2f}%\n\n")
-        f.write(f"Percentage of flood events occurred with these WTs: {z500} at 500 hPa, {z1000} at 1000 hPa:\n{percentage_all:.2f}% ({len(total_analog_events)} events on {len(inungama_df['Date'])} total occurences)\n\n")
+        f.write(f"Percentage of flood events occurred with these WTs: {z500} at 500 hPa, {z1000} at 1000 hPa:\n{percentage_all:.2f}% ({len(total_analog_events)} events on {len(analog)} total occurences)\n\n")
         
         f.write('Divided by severity categories:\n')
         for category, count in category_counts.items():
             percentage = category_percentages[category]
             f.write(f"- {category}: {count} events ({percentage:.2f}%)\n")
-    
