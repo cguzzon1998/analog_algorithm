@@ -163,7 +163,7 @@ Make sure the necessary input files (e.g., ERA5 datasets and classification CSVs
 
 
 ## Overview:
-The **Analog algorithm**, contained in the script *analog_algorithm.py* is divided into 4 modules, that are called individually from the *main()* function. Here the 4 modules are presented briefly:
+The **Analog algorithm**, contained in the script *analog_algorithm.py* is divided into 6 modules, that are called individually from the *main()* function. Here the 6 modules are presented briefly:
 
 1. **Download of ERA5 data**:
     Call to the Copernicus ERA5 API to download reanalysis data:

@@ -18,9 +18,9 @@ def main():
                 - era5_download = false : no download"""
     
     ############### Definition of the target date ################
-    today = datetime.today() # Get today's date
+    today = datetime.today() - timedelta(days = 1) # Get today's date
     date_str = today.strftime('%Y%m%d')
-    out_folder = f'output/{date_str}' # Create the output folder
+    out_folder = f'output/arga_{date_str}' # Create the output folder
     os.makedirs(out_folder, exist_ok=True)
     
     
@@ -39,10 +39,10 @@ def main():
     - Francoli Basin = (41, 41.5, 0.75, 1.5)
     - d09 (Weastern Europe) = (31, 48, -17, 9)
     """
-    mes_lat_s = 40
-    mes_lat_n = 43
-    mes_lon_w = 0
-    mes_lon_e = 3.5
+    mes_lat_s = 42.25
+    mes_lat_n = 43.25
+    mes_lon_w = -2.75
+    mes_lon_e = -0.75
     mes_coords = [mes_lat_n, mes_lat_s, mes_lon_w, mes_lon_e]
 
 
@@ -214,7 +214,7 @@ def gfs_module(date, syn_coords, mes_coords, out_folder):
             lon_e = 360 + mes_coords[3]
             p_field = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(lon_w, lon_e))
 
-        elif mes_coords[2] < 0 and mes_coords[3] > 0:
+        elif mes_coords[2] < 0 and mes_coords[3] >= 0:
             lon_w = 360 + mes_coords[2]
             p1 = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(lon_w, 360))
             p2 = ds_precip.sel(latitude=slice(mes_coords[0], mes_coords[1]), longitude=slice(0, mes_coords[3]))
